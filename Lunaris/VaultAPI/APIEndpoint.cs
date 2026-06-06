@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -12,12 +13,11 @@ namespace Lunaris.VaultAPI
 	{
 		private readonly string _endpoint;
 		private readonly HttpClient _client;
-		private T _cached;
-		private DateTime _lastFetched;
+		private readonly ConcurrentDictionary<string, (T cached, DateTime lastFetched)> _cache = new();
 		private readonly TimeSpan _cacheDuration;
 
 		public string EndpointName => _endpoint;
-		public bool HasCached => _cached != null;
+		public bool HasCached => _cache.Count > 0;
 
 		public APIEndpoint(HttpClient client, string endpoint, TimeSpan? cacheDuration = null)
 		{
@@ -28,9 +28,6 @@ namespace Lunaris.VaultAPI
 
 		public async Task<T> FetchAsync(string slug = "", string version = "", bool forceRefresh = false)
 		{
-			if (!forceRefresh && _cached != null && DateTime.UtcNow - _lastFetched < _cacheDuration)
-				return _cached;
-
 			var endpoint = _endpoint;
 			if (!string.IsNullOrEmpty(slug))
 				endpoint = endpoint.Replace("{slug}", slug);
@@ -38,14 +35,17 @@ namespace Lunaris.VaultAPI
 			if (!string.IsNullOrEmpty(version))
 				endpoint = endpoint.Replace("{version}", version);
 
+			if (!forceRefresh && _cache.TryGetValue(endpoint, out var entry) && DateTime.UtcNow - entry.lastFetched < _cacheDuration)
+				return entry.cached;
+
 			var response = await _client.GetAsync(endpoint);
 			//response.EnsureSuccessStatusCode();
 
 			var json = await response.Content.ReadAsStringAsync();
-			_cached = JsonConvert.DeserializeObject<T>(json) ?? new T();
-			_lastFetched = DateTime.UtcNow;
+			var obj = JsonConvert.DeserializeObject<T>(json) ?? new T();
+			_cache[endpoint] = (obj, DateTime.UtcNow);
 
-			return _cached;
+			return obj;
 		}
 
 		public async Task<byte[]> FetchBytesAsync(string slug = "", string version = "")
@@ -82,7 +82,7 @@ namespace Lunaris.VaultAPI
 			return JsonConvert.DeserializeObject<TResponse>(await response.Content.ReadAsStringAsync());
 		}
 
-		public void Invalidate() => _cached = null;
+		public void Invalidate() => _cache.Clear();
 	}
 
 }
