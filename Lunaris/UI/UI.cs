@@ -63,7 +63,7 @@ namespace Lunaris
 
 		public class UISettings
 		{
-			public bool DrawDevAtStart = true;
+			public bool DrawDevAtStart = false;
 			public bool ShowDevBarInfo = true;
 			public bool AskForPerms = true;
 			public bool NotifyPerms = true;
