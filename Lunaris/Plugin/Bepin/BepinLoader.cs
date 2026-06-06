@@ -58,7 +58,6 @@ namespace Lunaris
 						return true;
 					}
 				}
-
 			}
 
 			return false;

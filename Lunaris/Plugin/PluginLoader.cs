@@ -364,11 +364,11 @@ namespace Lunaris
 			var manifest = PluginManifestHandler.GetManifest(desc.Id);
 			if (manifest != null)
 			{
-				//Bridge.Logger.Log($"found mani for {desc.Id} {manifest.IsEnabled}");
-
+				//Bridge.Logger.Log($"found mani for {desc.Id} {manifest.IsEnabled} '{desc.Version}' '{manifest.Version}'");
 				desc.Description = manifest.Description;
-				if(!manifest.IsFromAPI)
-					manifest.Version = desc.Version; //if we manually update a plugin we can't rely on manifest version
+				// prefer embedded version
+				if (!string.IsNullOrEmpty(desc.Version) && desc.Version != manifest.Version)
+					manifest.Version = desc.Version;
 				else
 					desc.Version = manifest.Version;
 				desc.Author = manifest.Author;

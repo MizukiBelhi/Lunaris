@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Lunaris.Message;
+using Version = SemanticVersioning.Version;
 
 namespace Lunaris
 {
@@ -33,29 +34,48 @@ namespace Lunaris
 				var req = _checkQueue.Select(v => v.desc).ToList();
 				var allUpdates = await Bridge.PluginApi.FetchAllUpdates([.. req.Select(t => t.Manifest)]);
 
-				var nonUpdates = req.Where(t => !allUpdates.ContainsKey(t.Manifest.Id)).ToList();
+				var updatesToApply = new Dictionary<string, string>();
+				if (allUpdates != null)
+				{
+					foreach (var kv in allUpdates)
+					{
+						var slug = kv.Key;
+						var latest = kv.Value;
+						var desc = req.FirstOrDefault(d => d.Manifest != null && d.Manifest.Id == slug);
+						if (desc == null) continue;
+						var current = desc.Version ?? desc.Manifest?.Version ?? "0.0.0";
+						try
+						{
+							var curV = new Version(current);
+							var latV = new Version(latest);
+							if (latV > curV)
+								updatesToApply[slug] = latest;
+						}
+						catch
+						{
+							if (!string.IsNullOrEmpty(latest) && !string.Equals(latest, current, StringComparison.OrdinalIgnoreCase))
+								updatesToApply[slug] = latest;
+						}
+					}
+				}
+
+				var nonUpdates = req.Where(t => t.Manifest == null || !updatesToApply.ContainsKey(t.Manifest.Id)).ToList();
 
 				DispatcherBehaviour.RunOnMainThread(() =>
 				{
-					//_completedChecks++;
-
-					foreach (var upd in allUpdates)
+					foreach (var upd in updatesToApply)
 					{
 						var item = _checkQueue.FirstOrDefault(t => t.desc.Manifest.Id == upd.Key);
-						if(item == null) continue;
-
-						var desc = item.desc;
-
+						if (item == null) continue;
 						item.hasUpdate = true;
-						_pendingUpdates[desc.Manifest.DisplayName] = upd.Value;
+						_pendingUpdates[item.desc.Manifest.DisplayName] = upd.Value;
 					}
 
-					foreach(var desc in nonUpdates)
+					foreach (var desc in nonUpdates)
 					{
 						PluginLoader.EnqueueLoad(desc);
 					}
 
-					//if (_completedChecks == _checkQueue.Count)
 					OnAllChecksComplete();
 				});
 			});
