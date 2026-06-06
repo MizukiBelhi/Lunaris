@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{9725AFDD-7ADB-469A-BB52-73C19AAC716B}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Lunaris</RootNamespace>
+    <AssemblyName>Lunaris</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+    <NuGetPackageImportStamp>
+    </NuGetPackageImportStamp>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>..\Lunaris\Build\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>..\Lunaris\Build\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="0Harmony, Version=2.13.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\HarmonyX.2.13.0\lib\net452\0Harmony.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>F:\steam\steamapps\common\Erenshor Playtest\Erenshor_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="BepInEx, Version=5.4.21.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\LunarisLib\BepInEx.dll</HintPath>
+    </Reference>
+    <Reference Include="ImGui.NET, Version=1.91.0.1, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>Embeds\ImGui.NET.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Cecil, Version=0.11.5.0, Culture=neutral, PublicKeyToken=50cebf1cceb9d05e, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\Mono.Cecil.0.11.5\lib\net40\Mono.Cecil.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Cecil.Mdb, Version=0.11.5.0, Culture=neutral, PublicKeyToken=50cebf1cceb9d05e, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\Mono.Cecil.0.11.5\lib\net40\Mono.Cecil.Mdb.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Cecil.Pdb, Version=0.11.5.0, Culture=neutral, PublicKeyToken=50cebf1cceb9d05e, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\Mono.Cecil.0.11.5\lib\net40\Mono.Cecil.Pdb.dll</HintPath>
+    </Reference>
+    <Reference Include="Mono.Cecil.Rocks, Version=0.11.5.0, Culture=neutral, PublicKeyToken=50cebf1cceb9d05e, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\Mono.Cecil.0.11.5\lib\net40\Mono.Cecil.Rocks.dll</HintPath>
+    </Reference>
+    <Reference Include="MonoMod.Backports, Version=1.1.2.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\MonoMod.Backports.1.1.2\lib\net452\MonoMod.Backports.dll</HintPath>
+    </Reference>
+    <Reference Include="MonoMod.Core, Version=1.1.2.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\MonoMod.Core.1.1.2\lib\net452\MonoMod.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="MonoMod.Iced, Version=1.17.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\MonoMod.Core.1.1.2\lib\net452\MonoMod.Iced.dll</HintPath>
+    </Reference>
+    <Reference Include="MonoMod.ILHelpers, Version=1.1.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\MonoMod.ILHelpers.1.1.0\lib\net452\MonoMod.ILHelpers.dll</HintPath>
+    </Reference>
+    <Reference Include="MonoMod.RuntimeDetour, Version=25.1.2.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\MonoMod.RuntimeDetour.25.1.2\lib\net452\MonoMod.RuntimeDetour.dll</HintPath>
+    </Reference>
+    <Reference Include="MonoMod.Utils, Version=25.0.6.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\Lunaris\packages\MonoMod.Utils.25.0.6\lib\net452\MonoMod.Utils.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>Embeds\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.ComponentModel.Composition" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Numerics.Vectors, Version=4.1.5.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>Embeds\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+    <Reference Include="UnityEngine">
+      <HintPath>F:\steam\steamapps\common\Erenshor Playtest\Erenshor_Data\Managed\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>F:\steam\steamapps\common\Erenshor\Erenshor_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>F:\steam\steamapps\common\Erenshor\Erenshor_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>F:\steam\steamapps\common\Erenshor\Erenshor_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>F:\steam\steamapps\common\Erenshor Playtest\Erenshor_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>F:\steam\steamapps\common\Erenshor Playtest\Erenshor_Data\Managed\UnityEngine.InputModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>F:\steam\steamapps\common\Erenshor\Erenshor_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>F:\steam\steamapps\common\Erenshor\Erenshor_Data\Managed\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>F:\steam\steamapps\common\Erenshor\Erenshor_Data\Managed\UnityEngine.UIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Bepin\BepinWrapper.cs" />
+    <Compile Include="Bridge.cs" />
+    <Compile Include="Commands\Commands.cs" />
+    <Compile Include="Commands\LunarisCommandAttribute.cs" />
+    <Compile Include="Config\Config.cs" />
+    <Compile Include="Config\ConfigAttributes.cs" />
+    <Compile Include="Config\ConfigHandle.cs" />
+    <Compile Include="Config\ConfigHandler.cs" />
+    <Compile Include="Config\ConfigHandleWrapper.cs" />
+    <Compile Include="Config\IConfig.cs" />
+    <Compile Include="Config\IConfigHandle.cs" />
+    <Compile Include="Config\IConfigHandleInternal.cs" />
+    <Compile Include="Config\IKeybind.cs" />
+    <Compile Include="Config\KeybindAttribute.cs" />
+    <Compile Include="Config\KeybindEntry.cs" />
+    <Compile Include="Hooks\AssemblyHooks.cs" />
+    <Compile Include="Hooks\HarmonyFixes.cs" />
+    <Compile Include="IPC\IAuraProvider.cs" />
+    <Compile Include="IPC\IAuraSubscriber.cs" />
+    <Compile Include="IPC\Internal\AuraBase.cs" />
+    <Compile Include="IPC\Internal\AuraRegistry.cs" />
+    <Compile Include="Logging\ILog.cs" />
+    <Compile Include="Plugin\Bepin\BepinLoader.cs" />
+    <Compile Include="Plugin\IPluginLoader.cs" />
+    <Compile Include="Plugin\LibraryDescriptor.cs" />
+    <Compile Include="Plugin\LibraryLoader.cs" />
+    <Compile Include="Plugin\Lunaris\LunarisLoader.cs" />
+    <Compile Include="Plugin\Lunaris\LunarisPermissionAttribute.cs" />
+    <Compile Include="Plugin\Lunaris\LunarisPluginAttribute.cs" />
+    <Compile Include="Plugin\Lunaris\PluginInitializer.cs" />
+    <Compile Include="Plugin\Manifest\PluginManifest.cs" />
+    <Compile Include="Plugin\PluginAssemblyUtils.cs" />
+    <Compile Include="Plugin\PluginLoaderSelector.cs" />
+    <Compile Include="Plugin\Manifest\PluginManifestLoader.cs" />
+    <Compile Include="Plugin\PluginPermissions.cs" />
+    <Compile Include="Plugin\PluginDescriptor.cs" />
+    <Compile Include="Plugin\PluginUpdateChecker.cs" />
+    <Compile Include="Plugin\PluginWatcher.cs" />
+    <Compile Include="ThirdParty\Semver.cs" />
+    <Compile Include="UI\FontAwesomeIcons.cs" />
+    <Compile Include="Hooks\Hooks.cs" />
+    <Compile Include="Hooks\TypeTextHooks.cs" />
+    <Compile Include="Logging\ILoggingService.cs" />
+    <Compile Include="UI\IFont.cs" />
+    <Compile Include="UI\ImGUI.cs" />
+    <Compile Include="IPC\IPC.cs" />
+    <Compile Include="Plugin\Lunaris\LunarisPlugin.cs" />
+    <Compile Include="UI\ImGuiStyle.cs" />
+    <Compile Include="UI\LunarisSettings.cs" />
+    <Compile Include="UI\Notifications.cs" />
+    <Compile Include="UI\PluginInstaller.cs" />
+    <Compile Include="Plugin\PluginLoader.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="UI\PluginLinker.cs" />
+    <Compile Include="UI\PluginOptions.cs" />
+    <Compile Include="UI\ImGuiEx.cs" />
+    <Compile Include="UI\TitleScreenMenu.cs" />
+    <Compile Include="UI\UI.cs" />
+    <Compile Include="UI\UnityExplorer.cs" />
+    <Compile Include="UpdateCheck.cs" />
+    <Compile Include="VaultAPI\API.cs" />
+    <Compile Include="VaultAPI\APIEndpoint.cs" />
+    <Compile Include="VaultAPI\APIPluginManifestHandler.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="icon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="shade.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.config" />
+    <EmbeddedResource Include="FontAwesomeFreeSolid.otf" />
+    <EmbeddedResource Include="NotoSansKR-Regular.otf" />
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="defaultIcon.png" />
+    <EmbeddedResource Include="disabledIcon.png" />
+    <EmbeddedResource Include="installedIcon.png" />
+    <EmbeddedResource Include="outdatedInstallableIcon.png" />
+    <EmbeddedResource Include="troubleIcon.png" />
+    <EmbeddedResource Include="updateIcon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="cimgui.dll" />
+  </ItemGroup>
+  <ItemGroup />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

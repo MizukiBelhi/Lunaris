@@ -1,0 +1,165 @@
+// Auto-generated
+
+#include "dllmain.h"
+
+//MAKE_FORWARDER_FN(DLL)
+//MAKE_FORWARDER_FN(characteristics)
+//MAKE_FORWARDER_FN(stamp)
+//MAKE_FORWARDER_FN(version)
+//MAKE_FORWARDER_FN(base)
+//MAKE_FORWARDER_FN(functions)
+//MAKE_FORWARDER_FN(names)
+//MAKE_FORWARDER_FN(name)
+//MAKE_FORWARDER_FN(DllCanUnloadNow)
+//MAKE_FORWARDER_FN(DllGetClassObject)
+//MAKE_FORWARDER_FN(Private1)
+//MAKE_FORWARDER_FN(SvchostPushServiceGlobals)
+MAKE_FORWARDER_FN(WinHttpAddRequestHeaders)
+MAKE_FORWARDER_FN(WinHttpAddRequestHeadersEx)
+MAKE_FORWARDER_FN(WinHttpAutoProxySvcMain)
+MAKE_FORWARDER_FN(WinHttpCheckPlatform)
+MAKE_FORWARDER_FN(WinHttpCloseHandle)
+MAKE_FORWARDER_FN(WinHttpConnect)
+MAKE_FORWARDER_FN(WinHttpConnectionDeletePolicyEntries)
+MAKE_FORWARDER_FN(WinHttpConnectionDeleteProxyInfo)
+MAKE_FORWARDER_FN(WinHttpConnectionFreeNameList)
+MAKE_FORWARDER_FN(WinHttpConnectionFreeProxyInfo)
+MAKE_FORWARDER_FN(WinHttpConnectionFreeProxyList)
+MAKE_FORWARDER_FN(WinHttpConnectionGetNameList)
+MAKE_FORWARDER_FN(WinHttpConnectionGetProxyInfo)
+MAKE_FORWARDER_FN(WinHttpConnectionGetProxyList)
+MAKE_FORWARDER_FN(WinHttpConnectionSetPolicyEntries)
+MAKE_FORWARDER_FN(WinHttpConnectionSetProxyInfo)
+MAKE_FORWARDER_FN(WinHttpConnectionUpdateIfIndexTable)
+MAKE_FORWARDER_FN(WinHttpCrackUrl)
+MAKE_FORWARDER_FN(WinHttpCreateProxyResolver)
+MAKE_FORWARDER_FN(WinHttpCreateUrl)
+MAKE_FORWARDER_FN(WinHttpDetectAutoProxyConfigUrl)
+MAKE_FORWARDER_FN(WinHttpFreeProxyResult)
+MAKE_FORWARDER_FN(WinHttpFreeProxyResultEx)
+MAKE_FORWARDER_FN(WinHttpFreeProxySettings)
+MAKE_FORWARDER_FN(WinHttpGetDefaultProxyConfiguration)
+MAKE_FORWARDER_FN(WinHttpGetIEProxyConfigForCurrentUser)
+MAKE_FORWARDER_FN(WinHttpGetProxyForUrl)
+MAKE_FORWARDER_FN(WinHttpGetProxyForUrlEx)
+MAKE_FORWARDER_FN(WinHttpGetProxyForUrlEx2)
+MAKE_FORWARDER_FN(WinHttpGetProxyForUrlHvsi)
+MAKE_FORWARDER_FN(WinHttpGetProxyResult)
+MAKE_FORWARDER_FN(WinHttpGetProxyResultEx)
+MAKE_FORWARDER_FN(WinHttpGetProxySettingsVersion)
+MAKE_FORWARDER_FN(WinHttpGetTunnelSocket)
+MAKE_FORWARDER_FN(WinHttpOpen)
+MAKE_FORWARDER_FN(WinHttpOpenRequest)
+MAKE_FORWARDER_FN(WinHttpPacJsWorkerMain)
+MAKE_FORWARDER_FN(WinHttpProbeConnectivity)
+MAKE_FORWARDER_FN(WinHttpQueryAuthSchemes)
+MAKE_FORWARDER_FN(WinHttpQueryDataAvailable)
+MAKE_FORWARDER_FN(WinHttpQueryHeaders)
+MAKE_FORWARDER_FN(WinHttpQueryOption)
+MAKE_FORWARDER_FN(WinHttpReadData)
+MAKE_FORWARDER_FN(WinHttpReadProxySettings)
+MAKE_FORWARDER_FN(WinHttpReadProxySettingsHvsi)
+MAKE_FORWARDER_FN(WinHttpReceiveResponse)
+MAKE_FORWARDER_FN(WinHttpResetAutoProxy)
+MAKE_FORWARDER_FN(WinHttpSaveProxyCredentials)
+MAKE_FORWARDER_FN(WinHttpSendRequest)
+MAKE_FORWARDER_FN(WinHttpSetCredentials)
+MAKE_FORWARDER_FN(WinHttpSetDefaultProxyConfiguration)
+MAKE_FORWARDER_FN(WinHttpSetOption)
+MAKE_FORWARDER_FN(WinHttpSetProxySettingsPerUser)
+MAKE_FORWARDER_FN(WinHttpSetSecureLegacyServersAppCompat)
+MAKE_FORWARDER_FN(WinHttpSetStatusCallback)
+MAKE_FORWARDER_FN(WinHttpSetTimeouts)
+MAKE_FORWARDER_FN(WinHttpTimeFromSystemTime)
+MAKE_FORWARDER_FN(WinHttpTimeToSystemTime)
+MAKE_FORWARDER_FN(WinHttpWebSocketClose)
+MAKE_FORWARDER_FN(WinHttpWebSocketCompleteUpgrade)
+MAKE_FORWARDER_FN(WinHttpWebSocketQueryCloseStatus)
+MAKE_FORWARDER_FN(WinHttpWebSocketReceive)
+MAKE_FORWARDER_FN(WinHttpWebSocketSend)
+MAKE_FORWARDER_FN(WinHttpWebSocketShutdown)
+MAKE_FORWARDER_FN(WinHttpWriteData)
+MAKE_FORWARDER_FN(WinHttpWriteProxySettings)
+//MAKE_FORWARDER_FN(Summary)
+
+std::vector<const char*> g_exportNames = {
+    //"DLL",
+    //"characteristics",
+    //"stamp",
+    //"version",
+    //"base",
+    //"functions",
+    //"names",
+    //"name",
+   // "DllCanUnloadNow",
+    //"DllGetClassObject",
+   // "Private1",
+    //"SvchostPushServiceGlobals",
+    "WinHttpAddRequestHeaders",
+    "WinHttpAddRequestHeadersEx",
+    "WinHttpAutoProxySvcMain",
+    "WinHttpCheckPlatform",
+    "WinHttpCloseHandle",
+    "WinHttpConnect",
+    "WinHttpConnectionDeletePolicyEntries",
+    "WinHttpConnectionDeleteProxyInfo",
+    "WinHttpConnectionFreeNameList",
+    "WinHttpConnectionFreeProxyInfo",
+    "WinHttpConnectionFreeProxyList",
+    "WinHttpConnectionGetNameList",
+    "WinHttpConnectionGetProxyInfo",
+    "WinHttpConnectionGetProxyList",
+    "WinHttpConnectionSetPolicyEntries",
+    "WinHttpConnectionSetProxyInfo",
+    "WinHttpConnectionUpdateIfIndexTable",
+    "WinHttpCrackUrl",
+    "WinHttpCreateProxyResolver",
+    "WinHttpCreateUrl",
+    "WinHttpDetectAutoProxyConfigUrl",
+    "WinHttpFreeProxyResult",
+    "WinHttpFreeProxyResultEx",
+    "WinHttpFreeProxySettings",
+    "WinHttpGetDefaultProxyConfiguration",
+    "WinHttpGetIEProxyConfigForCurrentUser",
+    "WinHttpGetProxyForUrl",
+    "WinHttpGetProxyForUrlEx",
+    "WinHttpGetProxyForUrlEx2",
+    "WinHttpGetProxyForUrlHvsi",
+    "WinHttpGetProxyResult",
+    "WinHttpGetProxyResultEx",
+    "WinHttpGetProxySettingsVersion",
+    "WinHttpGetTunnelSocket",
+    "WinHttpOpen",
+    "WinHttpOpenRequest",
+    "WinHttpPacJsWorkerMain",
+    "WinHttpProbeConnectivity",
+    "WinHttpQueryAuthSchemes",
+    "WinHttpQueryDataAvailable",
+    "WinHttpQueryHeaders",
+    "WinHttpQueryOption",
+    "WinHttpReadData",
+    "WinHttpReadProxySettings",
+    "WinHttpReadProxySettingsHvsi",
+    "WinHttpReceiveResponse",
+    "WinHttpResetAutoProxy",
+    "WinHttpSaveProxyCredentials",
+    "WinHttpSendRequest",
+    "WinHttpSetCredentials",
+    "WinHttpSetDefaultProxyConfiguration",
+    "WinHttpSetOption",
+    "WinHttpSetProxySettingsPerUser",
+    "WinHttpSetSecureLegacyServersAppCompat",
+    "WinHttpSetStatusCallback",
+    "WinHttpSetTimeouts",
+    "WinHttpTimeFromSystemTime",
+    "WinHttpTimeToSystemTime",
+    "WinHttpWebSocketClose",
+    "WinHttpWebSocketCompleteUpgrade",
+    "WinHttpWebSocketQueryCloseStatus",
+    "WinHttpWebSocketReceive",
+    "WinHttpWebSocketSend",
+    "WinHttpWebSocketShutdown",
+    "WinHttpWriteData",
+    "WinHttpWriteProxySettings",
+   // "Summary",
+};

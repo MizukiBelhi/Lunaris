@@ -1,0 +1,7 @@
+apiRules:
+- exclude:
+    uidRegex: ^System\.
+    type: Member
+- exclude:
+    uidRegex: ^UnityEngine\.
+    type: Member
