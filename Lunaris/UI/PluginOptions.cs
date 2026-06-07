@@ -52,6 +52,7 @@ namespace Lunaris
 			if (cfg == null) { _sectionCache[pluginName] = []; return; }
 
 			var settings = cfg.GetSettings().ToList();
+			var hidden = ((ConfigInstance)cfg).GetHiddenKeys();
 			var descs = ((ConfigInstance)cfg).GetDescs();
 			var ranges = ((ConfigInstance)cfg).GetRanges();
 			var sections = ((ConfigInstance)cfg).GetSections();
@@ -62,6 +63,8 @@ namespace Lunaris
 			{
 				var set = settings[i];
 				if (set.Key.StartsWith("KB.")) continue;
+				if (set.Key.StartsWith("__")) continue; // internal/meta keys
+				if (hidden.Contains(set.Key)) continue;
 
 				var desc = descs.ContainsKey(set.Key) ? descs[set.Key] : "";
 				var sect = sections.ContainsKey(set.Key) ? sections[set.Key] : "Default";
@@ -158,6 +161,8 @@ namespace Lunaris
 					foreach (var set in settings)
 					{
 						if (set.Key.StartsWith("KB.")) continue;
+						if (set.Key.StartsWith("__")) continue;
+						if (((ConfigInstance)cfg).GetHiddenKeys().Contains(set.Key)) continue;
 						var kk = set.Key.Contains('.') ? set.Key.Substring(set.Key.IndexOf('.') + 1) : set.Key;
 						if (handledKeys.Contains(kk)) continue;
 						var n = ImGui.CalcTextSize(set.Key).X;
@@ -412,7 +417,7 @@ namespace Lunaris
 				});
 
 				string btnLabel = _captureKeys.Count > 0 ? string.Join(" + ", _captureKeys.OrderByDescending(k => IsModifier(k)).ThenBy(k => (int)k).Select(KeycodeDisplayName)) : "Press keys...";
-				
+
 				if (ImGui.Button($"{btnLabel}##kbcap_{propName}", new System.Numerics.Vector2(btnWidth, 0)) || confirm || escape)
 				{
 					if (!escape)
@@ -425,7 +430,7 @@ namespace Lunaris
 					_capturing = null;
 					_captureKeys.Clear();
 				}
-				
+
 
 				ImGui.PopStyleColor(2);
 			}
@@ -445,7 +450,7 @@ namespace Lunaris
 			ImGui.SameLine();
 
 
-			if (UI.IconButton(UI.ToIconString(FontAwesomeIcon.X), UI.LunarisColors.DPSRed*0.8f, UI.LunarisColors.DPSRed * 0.9f, UI.LunarisColors.DPSRed * 1.2f))
+			if (UI.IconButton(UI.ToIconString(FontAwesomeIcon.X), UI.LunarisColors.DPSRed * 0.8f, UI.LunarisColors.DPSRed * 0.9f, UI.LunarisColors.DPSRed * 1.2f))
 				onChanged([]);
 
 			if (hasConflict)
@@ -474,7 +479,7 @@ namespace Lunaris
 				}
 				else
 				{
-					if (ImGui.DragInt(id, ref i)) { val = i; changed = true; }
+					if (ImGui.InputInt(id, ref i)) { val = i; changed = true; }
 				}
 				break;
 
@@ -486,7 +491,7 @@ namespace Lunaris
 				}
 				else
 				{
-					if (ImGui.DragInt(id, ref li)) { val = li; changed = true; }
+					if (ImGui.InputInt(id, ref li)) { val = li; changed = true; }
 				}
 				break;
 
@@ -603,7 +608,7 @@ namespace Lunaris
 				}
 				else
 				{
-					if(val == null)
+					if (val == null)
 						ImGui.TextDisabled("null");
 					else
 						ImGui.TextDisabled(val.ToString());
@@ -641,7 +646,7 @@ namespace Lunaris
 			_ => k.ToString()
 		};
 
-		private static bool IsModifier(KeyCode kc) => kc is	KeyCode.LeftShift or KeyCode.RightShift or KeyCode.LeftControl or KeyCode.RightControl or
+		private static bool IsModifier(KeyCode kc) => kc is KeyCode.LeftShift or KeyCode.RightShift or KeyCode.LeftControl or KeyCode.RightControl or
 													KeyCode.LeftAlt or KeyCode.RightAlt or KeyCode.LeftWindows or KeyCode.RightWindows;
 
 

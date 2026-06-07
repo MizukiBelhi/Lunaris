@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEngine;
 
 namespace Lunaris.Config
@@ -37,6 +38,49 @@ namespace Lunaris.Config
 
 			var store = (ConfigInstance)rawCfg;
 			var prefix = typeof(T).Name;
+
+			var members = typeof(T).GetMembers(BindingFlags.Public | BindingFlags.Instance).Where(m => m is PropertyInfo || m is FieldInfo).ToList();
+			var settings = store.GetSettings();
+			bool didChange = false;
+
+			foreach (var m in members)
+			{
+				var aliases = m.GetCustomAttributes(typeof(ConfigAliasAttribute), inherit: true).OfType<ConfigAliasAttribute>().ToArray();
+				if (aliases == null || aliases.Length == 0) continue;
+				var memberType = m is PropertyInfo p ? p.PropertyType : ((FieldInfo)m).FieldType;
+
+				foreach (var a in aliases)
+				{
+					var alias = a.Alias;
+					if (string.IsNullOrEmpty(alias)) continue;
+
+					var candidates = new List<string>();
+					if (alias.Contains('.')) candidates.Add(alias);
+					else { candidates.Add(prefix + "." + alias); candidates.Add(alias); }
+
+					foreach (var cand in candidates)
+					{
+						if (string.IsNullOrEmpty(cand)) continue;
+						if (!settings.ContainsKey(cand)) continue;
+
+						var newKey = prefix + "." + m.Name;
+						if (settings.ContainsKey(newKey)) break; // already have a value for new key
+
+						var val = store.Read(cand, memberType, memberType.IsValueType ? Activator.CreateInstance(memberType) : null);
+						store.WriteObjectNoSave(newKey, val, memberType);
+						store.HideKeyNoSave(cand);
+						Bridge.Logger.Log($"Config: Migrated '{cand}' => '{newKey}' for plugin '{pluginName}'");
+						didChange = true;
+						// refresh settings snapshot
+						settings = store.GetSettings();
+						break;
+					}
+				}
+			}
+
+			if (didChange)
+				store.Save();
+
 			var handle = new ConfigHandle<T>(store, prefix);
 
 			if (!_handles.ContainsKey(pluginName))

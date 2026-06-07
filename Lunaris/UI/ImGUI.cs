@@ -141,13 +141,15 @@ namespace Lunaris
 			if (_heldMouseButtons[0]) CallWindowProc(originalWndProc, hWnd, 0x0202, IntPtr.Zero, IntPtr.Zero);
 			if (_heldMouseButtons[1]) CallWindowProc(originalWndProc, hWnd, 0x0205, IntPtr.Zero, IntPtr.Zero);
 			if (_heldMouseButtons[2]) CallWindowProc(originalWndProc, hWnd, 0x0208, IntPtr.Zero, IntPtr.Zero);
-			foreach (var key in _heldKeys)
+
+			var _kk = new HashSet<IntPtr>(_heldKeys);
+			foreach (var key in _kk)
 			{
+				_heldKeys.Remove(key);
 				IntPtr lp = (IntPtr)(1 | (1 << 31) | (1 << 30));
 				CallWindowProc(originalWndProc, hWnd, 0x0101, key, lp);
 				CallWindowProc(originalWndProc, hWnd, 0x0105, key, lp);
 			}
-			_heldKeys.Clear();
 		}
 
 

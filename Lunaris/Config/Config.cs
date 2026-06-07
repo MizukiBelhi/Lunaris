@@ -17,7 +17,7 @@ namespace Lunaris.Config
 		private readonly string _filePath;
 		private Dictionary<string, SettingEntry> _settings = new(StringComparer.OrdinalIgnoreCase);
 		private Dictionary<string, string> _descs = new(StringComparer.OrdinalIgnoreCase);
-		private Dictionary<string, (float,float)> _ranges = new(StringComparer.OrdinalIgnoreCase);
+		private Dictionary<string, (float, float)> _ranges = new(StringComparer.OrdinalIgnoreCase);
 		private Dictionary<string, string> _sects = new(StringComparer.OrdinalIgnoreCase);
 		private Dictionary<string, SettingEntry> _defaults = [];
 		private readonly Dictionary<string, List<Action<object>>> _Callbacks = [];
@@ -44,6 +44,9 @@ namespace Lunaris.Config
 
 		private enum EntryType : byte { String = 0, Int = 1, Float = 2, Bool = 3, Long = 4, Vector2, Vector3, Color, Enum = 10, BsonBlob = 255 }
 
+		private readonly HashSet<string> _hiddenKeys = new(StringComparer.OrdinalIgnoreCase);
+		private const string HIDDEN_META_KEY = "__Lunaris.HiddenKeys";
+
 		public ConfigInstance(string pluginName)
 		{
 			_filePath = Path.Combine(PluginLoader.configPath, $"{pluginName}.lpcfg");
@@ -63,11 +66,11 @@ namespace Lunaris.Config
 
 		internal string Sanitize(string str)
 		{
-			if(string.IsNullOrEmpty(str)) return str;
+			if (string.IsNullOrEmpty(str)) return str;
 			return str.Replace("%", "%%").ToLower();
 		}
 
-		internal KeybindEntry RegisterKeybind(string key, KeyCode[] keys, string desc=null, string sect=null)
+		internal KeybindEntry RegisterKeybind(string key, KeyCode[] keys, string desc = null, string sect = null)
 		{
 			var handle = ConfigHandler.GetOrCreateHandle(PluginName);
 			return handle.AddKeybind(key, keys, Sanitize(desc), Sanitize(sect));
@@ -96,10 +99,16 @@ namespace Lunaris.Config
 
 		public T Read<T>(string key, T defaultValue = default)
 		{
-			return (T)Read(key, typeof(T), defaultValue);
+			var result = Read(key, typeof(T), defaultValue);
+			if (result is T typed) return typed;
+			try { return (T)Convert.ChangeType(result, typeof(T)); }
+			catch(Exception e) {
+				Bridge.Logger.LogError($"Failed to read config key '{key}' ({result.GetType()}) as type {typeof(T)}. Exception: {e}");
+				return defaultValue;
+			}
 		}
 
-		internal object Read(string key, Type type, object defaultValue = null, int depth=0)
+		internal object Read(string key, Type type, object defaultValue = null, int depth = 0)
 		{
 			if (!_defaults.ContainsKey(key))
 				_defaults[key] = new(defaultValue, type);
@@ -125,7 +134,7 @@ namespace Lunaris.Config
 
 					var token = JToken.ReadFrom(reader);
 
-					if(depth == 32)
+					if (depth == 32)
 					{
 						Bridge.Logger.LogError($"Max config read depth reached for key '{key}', returning default value. Last token: {token}");
 						return defaultValue;
@@ -136,7 +145,7 @@ namespace Lunaris.Config
 					{
 						var innerBytes = token["$value"].ToObject<byte[]>();
 						value.Value = innerBytes;
-						return Read(key, type, defaultValue, depth+1);
+						return Read(key, type, defaultValue, depth + 1);
 					}
 
 					var res = token.ToObject(type, serializer);
@@ -165,7 +174,7 @@ namespace Lunaris.Config
 			if (!_defaults.ContainsKey(key))
 				_defaults[key] = new(value, typeof(T));
 
-			if(!_descs.ContainsKey(key))
+			if (!_descs.ContainsKey(key))
 				_descs[key] = null;
 			Save();
 
@@ -191,7 +200,7 @@ namespace Lunaris.Config
 
 		internal void WriteBep<T>(string key, T value)
 		{
-			if(!_settings.ContainsKey(key))
+			if (!_settings.ContainsKey(key))
 				_settings[key] = new(value, typeof(T));
 
 			if (!_defaults.ContainsKey(key))
@@ -225,7 +234,7 @@ namespace Lunaris.Config
 		//Removes a setting entirely.
 		public void Remove(string key)
 		{
-			if(_settings.ContainsKey(key))
+			if (_settings.ContainsKey(key))
 				_settings.Remove(key);
 			if (_descs.ContainsKey(key))
 				_descs.Remove(key);
@@ -238,6 +247,69 @@ namespace Lunaris.Config
 			Save();
 		}
 
+		internal IReadOnlyCollection<string> GetHiddenKeys()
+		{
+			if (_hiddenKeys.Count == 0)
+			{
+				var arr = Read(HIDDEN_META_KEY, typeof(string[]), Array.Empty<string>()) as string[];
+				if (arr != null && arr.Length > 0)
+				{
+					foreach (var k in arr)
+						if (!string.IsNullOrEmpty(k)) _hiddenKeys.Add(k);
+				}
+			}
+			return _hiddenKeys;
+		}
+
+		internal void HideKeyNoSave(string key)
+		{
+			if (string.IsNullOrEmpty(key)) return;
+			GetHiddenKeys();
+			if (_hiddenKeys.Add(key))
+				WriteObjectNoSave(HIDDEN_META_KEY, _hiddenKeys.ToArray(), typeof(string[]));
+		}
+
+		internal void HideKey(string key)
+		{
+			HideKeyNoSave(key);
+			Save();
+		}
+
+		internal void WriteObjectNoSave(string key, object value, Type type)
+		{
+			if (!_settings.ContainsKey(key))
+				_settings[key] = new SettingEntry(value, type);
+			else
+				_settings[key].Value = value;
+
+			if (!_defaults.ContainsKey(key))
+				_defaults[key] = new SettingEntry(value, type);
+
+			if (!_descs.ContainsKey(key))
+				_descs[key] = null;
+		}
+
+		internal void PrunePrefix(string prefix, IEnumerable<string> validMemberNames)
+		{
+			if (string.IsNullOrEmpty(prefix)) return;
+			var valid = new HashSet<string>(validMemberNames, StringComparer.OrdinalIgnoreCase);
+			var prefixDot = prefix + ".";
+			var toRemove = _settings.Keys.Where(k => k.StartsWith(prefixDot, StringComparison.OrdinalIgnoreCase)).ToList();
+			foreach (var fullKey in toRemove)
+			{
+				var remainder = fullKey.Length > prefixDot.Length ? fullKey.Substring(prefixDot.Length) : "";
+				if (string.IsNullOrEmpty(remainder)) continue;
+				if (valid.Contains(remainder)) continue;
+				_settings.Remove(fullKey);
+				if (_descs.ContainsKey(fullKey)) _descs.Remove(fullKey);
+				if (_ranges.ContainsKey(fullKey)) _ranges.Remove(fullKey);
+				if (_sects.ContainsKey(fullKey)) _sects.Remove(fullKey);
+				if (_defaults.ContainsKey(fullKey)) _defaults.Remove(fullKey);
+				if (_Callbacks.ContainsKey(fullKey)) _Callbacks.Remove(fullKey);
+			}
+			if (toRemove.Count > 0)
+				Save();
+		}
 
 		public void Save()
 		{
@@ -261,7 +333,7 @@ namespace Lunaris.Config
 				WriteValue(writer, kvp.Value.Value);
 			}
 
-			
+
 		}
 		void DebugDumpBson(byte[] bytes)
 		{
@@ -302,7 +374,7 @@ namespace Lunaris.Config
 				using (var ms = new MemoryStream())
 				{
 					using (var bsonWriter = new BsonWriter(ms))
-						MakeBsonSerializer().Serialize(bsonWriter, value );
+						MakeBsonSerializer().Serialize(bsonWriter, value);
 					var bson = ms.ToArray();
 					w.Write(bson.Length);
 					w.Write(bson);
@@ -334,13 +406,13 @@ namespace Lunaris.Config
 				var type = (EntryType)reader.ReadByte();
 
 				var (x, y) = ReadValue(reader, type);
-				if(x == null)
+				if (x == null)
 				{
 					Bridge.Logger.LogError($"Failed to read config key '{key}', stopping load of {_filePath}");
 					return;
 				}
 
-				_settings[key] = new(x,y);
+				_settings[key] = new(x, y);
 			}
 		}
 
@@ -462,7 +534,7 @@ namespace Lunaris.Config
 							entry.Value = Convert.ChangeType(obj, entry.Type);
 							return entry;
 						}
-						catch{}
+						catch { }
 					}
 					var tmp = JsonSerializer.Create(new JsonSerializerSettings
 					{
@@ -477,7 +549,7 @@ namespace Lunaris.Config
 						entry.Value = valueToken.ToObject(entry.Type, tmp);
 						return entry;
 					}
-					catch{}
+					catch { }
 				}
 				if (valueToken.Type == JTokenType.Object || valueToken.Type == JTokenType.Array)
 					entry.Value = valueToken;

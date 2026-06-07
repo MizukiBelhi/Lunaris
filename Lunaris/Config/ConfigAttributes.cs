@@ -55,4 +55,13 @@ namespace Lunaris.Config
 		public string Section { get; } = section;
 		public string Tooltip { get; } = tooltip;
 	}
+
+	/// <summary>
+	/// Declares one or more legacy key names that should be considered aliases for this member.
+	/// </summary>
+	[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true)]
+	public sealed class ConfigAliasAttribute(string alias) : Attribute
+	{
+		public string Alias { get; } = alias;
+	}
 }
