@@ -94,7 +94,7 @@ namespace Lunaris
 
 		public delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-		[DllImport("user32.dll")]
+		[DllImport("user32.dll", SetLastError = true)]
 		public static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr newProc);
 
 		[DllImport("user32.dll")]
@@ -109,12 +109,47 @@ namespace Lunaris
 		public const int GWL_WNDPROC = -4;
 
 		static IntPtr originalWndProc;
+		static IntPtr hookedHwnd;
 		static WndProcDelegate newWndProcDelegate;
+
+		public static bool TryHookWndProc()
+		{
+			if (hookedHwnd != IntPtr.Zero)
+				return true;
+
+			var process = Process.GetCurrentProcess();
+			process.Refresh();
+
+			IntPtr hwnd = process.MainWindowHandle;
+			if (hwnd == IntPtr.Zero)
+				return false;
+
+			HookWndProc(hwnd);
+			return hookedHwnd != IntPtr.Zero;
+		}
 
 		public static void HookWndProc(IntPtr hwnd)
 		{
-			newWndProcDelegate = HookedWndProc;
-			originalWndProc = SetWindowLongPtr(hwnd, GWL_WNDPROC, Marshal.GetFunctionPointerForDelegate(newWndProcDelegate));
+			try
+			{
+				if (hwnd == IntPtr.Zero)
+				{
+					Debug.LogError("Lunaris ImGui failed to hook input: MainWindowHandle was zero.");
+					return;
+				}
+
+				newWndProcDelegate = HookedWndProc;
+				originalWndProc = SetWindowLongPtr(hwnd, GWL_WNDPROC, Marshal.GetFunctionPointerForDelegate(newWndProcDelegate));
+				if (originalWndProc == IntPtr.Zero)
+				{
+					//Debug.LogError($"Lunaris ImGui failed to hook input for HWND {hwnd}: Win32 error {Marshal.GetLastWin32Error()}.");
+					newWndProcDelegate = null;
+					return;
+				}
+
+				hookedHwnd = hwnd;
+			}
+			catch{ }
 		}
 
 		private static readonly Dictionary<IntPtr, Texture> _textures = [];
@@ -595,8 +630,7 @@ namespace Lunaris
 				//RegisterTexture(fontTex);
 			}
 
-			IntPtr unityHwnd = Process.GetCurrentProcess().MainWindowHandle;
-			HookWndProc(unityHwnd);
+			TryHookWndProc();
 		}
 
 
@@ -623,54 +657,8 @@ namespace Lunaris
 
 		public static unsafe void Update()
 		{
+			TryHookWndProc();
 			//UpdateInput();
-		}
-
-		public static void UpdateInput()
-		{
-
-			Vector3 mPos = Input.mousePosition;
-			SetMousePos(mPos.x, Screen.height - mPos.y);
-
-			SetMouseButton(0, Input.GetMouseButton(0));
-			SetMouseButton(1, Input.GetMouseButton(1));
-			SetMouseButton(2, Input.GetMouseButton(2));
-
-			float wheel = Input.GetAxis("Mouse ScrollWheel");
-			if (wheel != 0) SetMouseWheel(wheel * 10f, 0);
-
-			foreach (char c in Input.inputString)
-			{
-				if (c >= ' ' && c != 127)
-					AddInputChar(c);
-			}
-
-			SetKeyModifiers(
-				Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl),
-				Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift),
-				Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt),
-				Input.GetKey(KeyCode.LeftWindows) || Input.GetKey(KeyCode.RightWindows)
-			);
-
-			MapKey(ImGuiKey.Tab, KeyCode.Tab);
-			MapKey(ImGuiKey.LeftArrow, KeyCode.LeftArrow);
-			MapKey(ImGuiKey.RightArrow, KeyCode.RightArrow);
-			MapKey(ImGuiKey.UpArrow, KeyCode.UpArrow);
-			MapKey(ImGuiKey.DownArrow, KeyCode.DownArrow);
-			MapKey(ImGuiKey.PageUp, KeyCode.PageUp);
-			MapKey(ImGuiKey.PageDown, KeyCode.PageDown);
-			MapKey(ImGuiKey.Home, KeyCode.Home);
-			MapKey(ImGuiKey.End, KeyCode.End);
-			MapKey(ImGuiKey.Insert, KeyCode.Insert);
-			MapKey(ImGuiKey.Delete, KeyCode.Delete);
-			MapKey(ImGuiKey.Backspace, KeyCode.Backspace);
-			MapKey(ImGuiKey.Space, KeyCode.Space);
-			MapKey(ImGuiKey.Enter, KeyCode.Return);
-			MapKey(ImGuiKey.Escape, KeyCode.Escape);
-			MapKey(ImGuiKey.KeypadEnter, KeyCode.KeypadEnter);
-
-			for (int i = 0; i < 12; i++)
-				MapKey(ImGuiKey.F1 + i, KeyCode.F1 + i);
 		}
 
 		private static void SendKey(ImGuiKey imguiKey, bool active)
@@ -680,18 +668,17 @@ namespace Lunaris
 				ImGuiNative.ImGuiIO_AddKeyEvent(ImGuiNative.igGetIO(), imguiKey, active ? (byte)1 : (byte)0);
 			}
 		}
-		private static void MapKey(ImGuiKey imguiKey, KeyCode unityKey)
-		{
-			unsafe
-			{
-				ImGuiNative.ImGuiIO_AddKeyEvent(ImGuiNative.igGetIO(), imguiKey, Input.GetKey(unityKey) ? (byte)1 : (byte)0);
-			}
-		}
 
 		public static void Dispose()
 		{
-			IntPtr hwnd = Process.GetCurrentProcess().MainWindowHandle;
-			SetWindowLongPtr(hwnd, GWL_WNDPROC, originalWndProc);
+			if (hookedHwnd != IntPtr.Zero)
+			{
+				SetWindowLongPtr(hookedHwnd, GWL_WNDPROC, originalWndProc);
+				hookedHwnd = IntPtr.Zero;
+				originalWndProc = IntPtr.Zero;
+				newWndProcDelegate = null;
+			}
+
 			ImGuiNative.igDestroyContext(_context);
 			if (_imgDll != IntPtr.Zero)
 			{

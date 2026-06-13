@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -79,7 +80,6 @@ namespace Lunaris
 				}
 			}
 		}
-
 		private static bool CompareBytes(byte[] a, byte[] b)
 		{
 			for (int i = 0; i < a.Length; i++)
@@ -123,7 +123,8 @@ namespace Lunaris
 
 			//AppDomain.CurrentDomain.AssemblyResolve += AssemblyResolve;
 
-			tmpDir = Path.Combine(Path.GetTempPath(), "LunarisDeps");
+			string patchTempDir = BuildPatchTempDirectory(unityAssemblyPath);
+			tmpDir = Path.Combine(patchTempDir, "LunarisDeps");
 			Directory.CreateDirectory(tmpDir);
 
 			//load assemblies
@@ -154,7 +155,7 @@ namespace Lunaris
 					return;
 				}
 
-				string patchedAssemblyPath = Path.Combine(Path.GetTempPath(), "UnityEngine.CoreModule.Patched.dll");
+				string patchedAssemblyPath = Path.Combine(patchTempDir, "UnityEngine.CoreModule.Patched.dll");
 				ModuleDefinition mainModule = ModuleDefinition.ReadModule(unityAssemblyPath);
 
 				TypeDefinition entryType = null;
@@ -204,6 +205,26 @@ namespace Lunaris
 			}
 		}
 		private static readonly Dictionary<string, Assembly> Loaded = new(StringComparer.OrdinalIgnoreCase);
+
+		private static string BuildPatchTempDirectory(string unityAssemblyPath)
+		{
+			string installName = "Erenshor";
+			try
+			{
+				string managedDir = Path.GetDirectoryName(Path.GetFullPath(unityAssemblyPath));
+				string dataDir = Directory.GetParent(managedDir)?.FullName;
+				string gameRoot = Directory.GetParent(dataDir)?.FullName;
+				string rootName = Path.GetFileName(gameRoot);
+				if (!string.IsNullOrWhiteSpace(rootName))
+					installName = rootName;
+			}
+			catch { }
+
+			foreach (char invalidChar in Path.GetInvalidFileNameChars())
+				installName = installName.Replace(invalidChar, '_');
+
+			return Path.Combine(Path.GetTempPath(), "LunarisPatches", installName + "_" + Process.GetCurrentProcess().Id);
+		}
 
 		public static Assembly AssemblyResolve(object sender, ResolveEventArgs args)
 		{

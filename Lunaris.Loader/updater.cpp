@@ -1,6 +1,17 @@
 #include "updater.h"
 #include <cstring>
 #include <cstdint>
+#include <algorithm>
+#include <cstdlib>
+#include <cctype>
+
+#ifdef _WIN32
+#define SECURITY_WIN32
+#include <security.h>
+#include <schannel.h>
+#pragma comment(lib, "secur32.lib")
+#pragma comment(lib, "ws2_32.lib")
+#endif
 
 #ifndef _WIN32
 #include <sys/stat.h>
@@ -82,19 +93,19 @@ static void sha256_final(Sha256Ctx& ctx, uint8_t hash[32]) {
 	if (ctx.datalen < 56) { while (i < 56) ctx.data[i++] = 0; }
 	else { while (i < 64) ctx.data[i++] = 0; sha256_transform(ctx, ctx.data); memset(ctx.data, 0, 56); }
 	ctx.bitlen += ctx.datalen * 8;
-	ctx.data[63] = ctx.bitlen;    ctx.data[62] = ctx.bitlen >> 8;  ctx.data[61] = ctx.bitlen >> 16;
-	ctx.data[60] = ctx.bitlen >> 24;ctx.data[59] = ctx.bitlen >> 32; ctx.data[58] = ctx.bitlen >> 40;
-	ctx.data[57] = ctx.bitlen >> 48;ctx.data[56] = ctx.bitlen >> 56;
+	ctx.data[63] = (uint8_t)ctx.bitlen;       ctx.data[62] = (uint8_t)(ctx.bitlen >> 8);  ctx.data[61] = (uint8_t)(ctx.bitlen >> 16);
+	ctx.data[60] = (uint8_t)(ctx.bitlen >> 24);ctx.data[59] = (uint8_t)(ctx.bitlen >> 32); ctx.data[58] = (uint8_t)(ctx.bitlen >> 40);
+	ctx.data[57] = (uint8_t)(ctx.bitlen >> 48);ctx.data[56] = (uint8_t)(ctx.bitlen >> 56);
 	sha256_transform(ctx, ctx.data);
 	for (i = 0; i < 4; ++i) {
-		hash[i] = (ctx.state[0] >> (24 - i * 8)) & 0xff;
-		hash[i + 4] = (ctx.state[1] >> (24 - i * 8)) & 0xff;
-		hash[i + 8] = (ctx.state[2] >> (24 - i * 8)) & 0xff;
-		hash[i + 12] = (ctx.state[3] >> (24 - i * 8)) & 0xff;
-		hash[i + 16] = (ctx.state[4] >> (24 - i * 8)) & 0xff;
-		hash[i + 20] = (ctx.state[5] >> (24 - i * 8)) & 0xff;
-		hash[i + 24] = (ctx.state[6] >> (24 - i * 8)) & 0xff;
-		hash[i + 28] = (ctx.state[7] >> (24 - i * 8)) & 0xff;
+		hash[i] = (uint8_t)((ctx.state[0] >> (24 - i * 8)) & 0xff);
+		hash[i + 4] = (uint8_t)((ctx.state[1] >> (24 - i * 8)) & 0xff);
+		hash[i + 8] = (uint8_t)((ctx.state[2] >> (24 - i * 8)) & 0xff);
+		hash[i + 12] = (uint8_t)((ctx.state[3] >> (24 - i * 8)) & 0xff);
+		hash[i + 16] = (uint8_t)((ctx.state[4] >> (24 - i * 8)) & 0xff);
+		hash[i + 20] = (uint8_t)((ctx.state[5] >> (24 - i * 8)) & 0xff);
+		hash[i + 24] = (uint8_t)((ctx.state[6] >> (24 - i * 8)) & 0xff);
+		hash[i + 28] = (uint8_t)((ctx.state[7] >> (24 - i * 8)) & 0xff);
 	}
 }
 
@@ -245,39 +256,403 @@ static std::string GetDllFolder() {
 
 #ifdef _WIN32
 
-static int RunProcess(const std::string& cmd, DWORD timeoutMs = 60000) {
-	STARTUPINFOA si = {};
-	si.cb = sizeof(si);
-	si.dwFlags = STARTF_USESHOWWINDOW;
-	si.wShowWindow = SW_HIDE;
-	PROCESS_INFORMATION pi = {};
-	std::string cmdBuf = cmd;
-	if (!CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE,
-		CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-		DebugLog(("RunProcess: CreateProcessA failed: " + std::to_string(GetLastError())).c_str());
-		return -1;
+struct ParsedHttpsUrl {
+	std::string host;
+	std::string path;
+	unsigned short port = 443;
+};
+
+struct TlsConnection {
+	SOCKET sock = INVALID_SOCKET;
+	CredHandle cred = {};
+	CtxtHandle ctx = {};
+	bool haveCred = false;
+	bool haveCtx = false;
+	SecPkgContext_StreamSizes sizes = {};
+	std::vector<char> encrypted;
+};
+
+static std::string ToLowerAscii(std::string s) {
+	std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+		return (char)tolower(c);
+	});
+	return s;
+}
+
+static bool ParseHttpsUrl(const std::string& url, ParsedHttpsUrl& parsed) {
+	const std::string prefix = "https://";
+	if (url.compare(0, prefix.size(), prefix) != 0)
+		return false;
+
+	size_t authorityStart = prefix.size();
+	size_t pathStart = url.find('/', authorityStart);
+	std::string authority = pathStart == std::string::npos
+		? url.substr(authorityStart)
+		: url.substr(authorityStart, pathStart - authorityStart);
+	parsed.path = pathStart == std::string::npos ? "/" : url.substr(pathStart);
+
+	size_t colon = authority.rfind(':');
+	if (colon != std::string::npos) {
+		parsed.host = authority.substr(0, colon);
+		int port = atoi(authority.substr(colon + 1).c_str());
+		if (port <= 0 || port > 65535)
+			return false;
+		parsed.port = (unsigned short)port;
 	}
-	DWORD waited = WaitForSingleObject(pi.hProcess, timeoutMs);
-	DWORD exitCode = (DWORD)-1;
-	if (waited == WAIT_OBJECT_0)
-		GetExitCodeProcess(pi.hProcess, &exitCode);
-	else
-		DebugLog("RunProcess: process timed out or wait failed");
-	CloseHandle(pi.hProcess);
-	CloseHandle(pi.hThread);
-	return (int)exitCode;
+	else {
+		parsed.host = authority;
+		parsed.port = 443;
+	}
+
+	return !parsed.host.empty() && !parsed.path.empty();
+}
+
+static bool EnsureWinsock() {
+	static bool started = false;
+	if (started)
+		return true;
+
+	WSADATA wsa = {};
+	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+		DebugLog(("DownloadFile: WSAStartup failed: " + std::to_string(WSAGetLastError())).c_str());
+		return false;
+	}
+	started = true;
+	return true;
+}
+
+static int ReceiveEncrypted(TlsConnection& tls) {
+	char recvBuf[8192];
+	int got = recv(tls.sock, recvBuf, sizeof(recvBuf), 0);
+	if (got > 0) tls.encrypted.insert(tls.encrypted.end(), recvBuf, recvBuf + got);
+	return got;
+}
+
+static SOCKET ConnectTcp(const std::string& host, unsigned short port) {
+	if (!EnsureWinsock())
+		return INVALID_SOCKET;
+
+	hostent* entry = gethostbyname(host.c_str());
+	if (!entry) {
+		DebugLog(("DownloadFile: DNS lookup failed: " + std::to_string(WSAGetLastError())).c_str());
+		return INVALID_SOCKET;
+	}
+
+	for (char** addr = entry->h_addr_list; addr && *addr; ++addr) {
+		SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (sock == INVALID_SOCKET)
+			continue;
+
+		sockaddr_in target = {};
+		target.sin_family = AF_INET;
+		target.sin_port = htons(port);
+		memcpy(&target.sin_addr, *addr, entry->h_length);
+
+		if (connect(sock, (sockaddr*)&target, sizeof(target)) == 0) return sock;
+
+		closesocket(sock);
+	}
+
+	DebugLog(("DownloadFile: TCP connect failed: " + std::to_string(WSAGetLastError())).c_str());
+	return INVALID_SOCKET;
+}
+
+static bool SendAll(SOCKET sock, const void* data, int len) {
+	const char* p = (const char*)data;
+	while (len > 0) {
+		int sent = send(sock, p, len, 0);
+		if (sent <= 0)
+			return false;
+		p += sent;
+		len -= sent;
+	}
+	return true;
+}
+
+static bool SendSecurityBuffer(SOCKET sock, SecBuffer& buffer) {
+	if (buffer.cbBuffer == 0 || !buffer.pvBuffer)
+		return true;
+
+	bool ok = SendAll(sock, buffer.pvBuffer, (int)buffer.cbBuffer);
+	FreeContextBuffer(buffer.pvBuffer);
+	buffer.pvBuffer = nullptr;
+	buffer.cbBuffer = 0;
+	return ok;
+}
+
+static bool KeepHandshakeExtra(const SecBuffer& buffer, std::vector<char>& encrypted) {
+	if (buffer.BufferType != SECBUFFER_EXTRA) {
+		encrypted.clear();
+		return true;
+	}
+
+	if (buffer.cbBuffer > encrypted.size()) {
+		DebugLog("DownloadFile: TLS extra buffer size was invalid.");
+		return false;
+	}
+
+	// InitializeSecurityContext reports handshake extras as bytes remaining at the tail.
+	std::vector<char> extraBytes(encrypted.end() - buffer.cbBuffer, encrypted.end());
+	encrypted.swap(extraBytes);
+	return true;
+}
+
+static bool TlsHandshake(TlsConnection& tls, const std::string& host) {
+	SCHANNEL_CRED cred = {};
+	cred.dwVersion = SCHANNEL_CRED_VERSION;
+	cred.dwFlags = SCH_USE_STRONG_CRYPTO;
+
+	TimeStamp expiry = {};
+	SECURITY_STATUS status = AcquireCredentialsHandleA(nullptr, const_cast<SEC_CHAR*>(UNISP_NAME_A),
+		SECPKG_CRED_OUTBOUND, nullptr, &cred, nullptr, nullptr, &tls.cred, &expiry);
+	if (status != SEC_E_OK) {
+		DebugLog(("DownloadFile: AcquireCredentialsHandle failed: " + std::to_string((long)status)).c_str());
+		return false;
+	}
+	tls.haveCred = true;
+
+	DWORD flags = ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY |
+		ISC_REQ_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM;
+	DWORD attrs = 0;
+	SecBuffer outBuffer = { 0, SECBUFFER_TOKEN, nullptr };
+	SecBufferDesc outDesc = { SECBUFFER_VERSION, 1, &outBuffer };
+
+	status = InitializeSecurityContextA(&tls.cred, nullptr, const_cast<SEC_CHAR*>(host.c_str()),
+		flags, 0, SECURITY_NATIVE_DREP, nullptr, 0, &tls.ctx, &outDesc, &attrs, &expiry);
+	if (status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED) {
+		DebugLog(("DownloadFile: InitializeSecurityContext failed: " + std::to_string((long)status)).c_str());
+		return false;
+	}
+	tls.haveCtx = true;
+
+	if (!SendSecurityBuffer(tls.sock, outBuffer))
+		return false;
+
+	while (status == SEC_I_CONTINUE_NEEDED || status == SEC_E_INCOMPLETE_MESSAGE) {
+		if (status == SEC_E_INCOMPLETE_MESSAGE || tls.encrypted.empty()) {
+			int got = ReceiveEncrypted(tls);
+			if (got <= 0) {
+				DebugLog("DownloadFile: TLS handshake failed.");
+				return false;
+			}
+		}
+
+		SecBuffer inBuffers[2] = {};
+		inBuffers[0].BufferType = SECBUFFER_TOKEN;
+		inBuffers[0].pvBuffer = tls.encrypted.data();
+		inBuffers[0].cbBuffer = (DWORD)tls.encrypted.size();
+		inBuffers[1].BufferType = SECBUFFER_EMPTY;
+		SecBufferDesc inDesc = { SECBUFFER_VERSION, 2, inBuffers };
+		outBuffer = { 0, SECBUFFER_TOKEN, nullptr };
+		outDesc = { SECBUFFER_VERSION, 1, &outBuffer };
+
+		status = InitializeSecurityContextA(&tls.cred, &tls.ctx, const_cast<SEC_CHAR*>(host.c_str()),
+			flags, 0, SECURITY_NATIVE_DREP, &inDesc, 0, &tls.ctx, &outDesc, &attrs, &expiry);
+		if (!SendSecurityBuffer(tls.sock, outBuffer))
+			return false;
+
+		if (status == SEC_E_INCOMPLETE_MESSAGE)
+			continue;
+		if (status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED) {
+			DebugLog(("DownloadFile: TLS handshake failed: " + std::to_string((long)status)).c_str());
+			return false;
+		}
+
+		if (!KeepHandshakeExtra(inBuffers[1], tls.encrypted))
+			return false;
+	}
+
+	status = QueryContextAttributesA(&tls.ctx, SECPKG_ATTR_STREAM_SIZES, &tls.sizes);
+	if (status != SEC_E_OK) {
+		DebugLog(("DownloadFile: QueryContextAttributes failed: " + std::to_string((long)status)).c_str());
+		return false;
+	}
+
+	return true;
+}
+
+static bool TlsSend(TlsConnection& tls, const std::string& plain) {
+	size_t offset = 0;
+	while (offset < plain.size()) {
+		DWORD chunk = (DWORD)std::min<size_t>(plain.size() - offset, tls.sizes.cbMaximumMessage);
+		std::vector<char> packet(tls.sizes.cbHeader + chunk + tls.sizes.cbTrailer);
+		memcpy(packet.data() + tls.sizes.cbHeader, plain.data() + offset, chunk);
+
+		SecBuffer buffers[4] = {};
+		buffers[0] = { tls.sizes.cbHeader, SECBUFFER_STREAM_HEADER, packet.data() };
+		buffers[1] = { chunk, SECBUFFER_DATA, packet.data() + tls.sizes.cbHeader };
+		buffers[2] = { tls.sizes.cbTrailer, SECBUFFER_STREAM_TRAILER, packet.data() + tls.sizes.cbHeader + chunk };
+		buffers[3] = { 0, SECBUFFER_EMPTY, nullptr };
+		SecBufferDesc desc = { SECBUFFER_VERSION, 4, buffers };
+
+		SECURITY_STATUS status = EncryptMessage(&tls.ctx, 0, &desc, 0);
+		if (status != SEC_E_OK) {
+			DebugLog(("DownloadFile: EncryptMessage failed: " + std::to_string((long)status)).c_str());
+			return false;
+		}
+
+		DWORD packetSize = buffers[0].cbBuffer + buffers[1].cbBuffer + buffers[2].cbBuffer;
+		if (!SendAll(tls.sock, packet.data(), (int)packetSize)) {
+			DebugLog(("DownloadFile: TLS send failed: " + std::to_string(WSAGetLastError())).c_str());
+			return false;
+		}
+		offset += chunk;
+	}
+	return true;
+}
+
+static bool TlsReadAll(TlsConnection& tls, std::string& out) {
+	for (;;) {
+		if (tls.encrypted.empty()) {
+			int got = ReceiveEncrypted(tls);
+			if (got == 0) return true;
+			if (got < 0) { DebugLog(("DownloadFile: TLS recv failed: " + std::to_string(WSAGetLastError())).c_str()); return false; }
+		}
+
+		SecBuffer buffers[4] = {};
+		buffers[0] = { (DWORD)tls.encrypted.size(), SECBUFFER_DATA, tls.encrypted.data() };
+		buffers[1] = { 0, SECBUFFER_EMPTY, nullptr };
+		buffers[2] = { 0, SECBUFFER_EMPTY, nullptr };
+		buffers[3] = { 0, SECBUFFER_EMPTY, nullptr };
+		SecBufferDesc desc = { SECBUFFER_VERSION, 4, buffers };
+
+		SECURITY_STATUS status = DecryptMessage(&tls.ctx, &desc, 0, nullptr);
+		if (status == SEC_E_INCOMPLETE_MESSAGE) {
+			int got = ReceiveEncrypted(tls);
+			if (got <= 0) { DebugLog("DownloadFile: TLS read failed."); return false; }
+			continue;
+		}
+		if (status == SEC_I_CONTEXT_EXPIRED) return true;
+		if (status != SEC_E_OK) {
+			DebugLog(("DownloadFile: DecryptMessage failed: " + std::to_string((long)status)).c_str());
+			return false;
+		}
+
+		std::vector<char> extra;
+		for (SecBuffer& buffer : buffers) {
+			if (buffer.BufferType == SECBUFFER_DATA && buffer.pvBuffer && buffer.cbBuffer)
+				out.append((char*)buffer.pvBuffer, buffer.cbBuffer);
+			else if (buffer.BufferType == SECBUFFER_EXTRA && buffer.pvBuffer && buffer.cbBuffer) {
+				char* p = (char*)buffer.pvBuffer;
+				extra.assign(p, p + buffer.cbBuffer);
+			}
+		}
+
+		tls.encrypted.swap(extra);
+	}
+}
+
+static void CloseTls(TlsConnection& tls) {
+	if (tls.haveCtx)
+		DeleteSecurityContext(&tls.ctx);
+	if (tls.haveCred)
+		FreeCredentialsHandle(&tls.cred);
+	if (tls.sock != INVALID_SOCKET)
+		closesocket(tls.sock);
+	tls = {};
+}
+
+static bool DecodeChunkedBody(const std::string& input, std::string& output) {
+	size_t pos = 0;
+	while (true) {
+		size_t lineEnd = input.find("\r\n", pos);
+		if (lineEnd == std::string::npos)
+			return false;
+		std::string line = input.substr(pos, lineEnd - pos);
+		size_t semi = line.find(';');
+		if (semi != std::string::npos)
+			line.resize(semi);
+
+		char* end = nullptr;
+		unsigned long chunkSize = strtoul(line.c_str(), &end, 16);
+		if (end == line.c_str())
+			return false;
+
+		pos = lineEnd + 2;
+		if (chunkSize == 0)
+			return true;
+		if (pos + chunkSize + 2 > input.size())
+			return false;
+
+		output.append(input.data() + pos, chunkSize);
+		pos += chunkSize;
+		if (input.compare(pos, 2, "\r\n") != 0)
+			return false;
+		pos += 2;
+	}
+}
+
+static bool WriteHttpBodyToFile(const std::string& response, const std::string& destPath) {
+	size_t headerEnd = response.find("\r\n\r\n");
+	if (headerEnd == std::string::npos) {
+		DebugLog("DownloadFile: malformed HTTP response.");
+		return false;
+	}
+
+	std::string headers = response.substr(0, headerEnd);
+	std::string lowerHeaders = ToLowerAscii(headers);
+	std::string body = response.substr(headerEnd + 4);
+
+	size_t firstSpace = headers.find(' ');
+	int statusCode = firstSpace == std::string::npos ? 0 : atoi(headers.c_str() + firstSpace + 1);
+	if (statusCode < 200 || statusCode > 299) {
+		DebugLog(("DownloadFile: unexpected HTTP status: " + std::to_string(statusCode)).c_str());
+		return false;
+	}
+
+	if (lowerHeaders.find("transfer-encoding: chunked") != std::string::npos) {
+		std::string decoded;
+		if (!DecodeChunkedBody(body, decoded)) {
+			DebugLog("DownloadFile: failed to decode chunked HTTP body.");
+			return false;
+		}
+		body.swap(decoded);
+	}
+
+	DeleteFileA(destPath.c_str());
+	HANDLE file = CreateFileA(destPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+		FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (file == INVALID_HANDLE_VALUE) {
+		DebugLog(("DownloadFile: failed to create output file: " + std::to_string(GetLastError())).c_str());
+		return false;
+	}
+
+	DWORD written = 0;
+	bool ok = WriteFile(file, body.data(), (DWORD)body.size(), &written, nullptr) &&
+		written == body.size();
+	CloseHandle(file);
+
+	if (!ok) {
+		DebugLog(("DownloadFile: failed to write output file: " + std::to_string(GetLastError())).c_str());
+		DeleteFileA(destPath.c_str());
+	}
+	return ok;
 }
 
 static bool DownloadFile(const std::string& url, const std::string& destPath) {
-	std::string certutilCmd = "certutil -urlcache -split -f \"" + url + "\" \"" + destPath + "\"";
-	int ret = RunProcess(certutilCmd);
-	if (ret == 0 && GetFileAttributesA(destPath.c_str()) != INVALID_FILE_ATTRIBUTES)
-		return true;
+	ParsedHttpsUrl parsed;
+	if (!ParseHttpsUrl(url, parsed)) {
+		DebugLog("DownloadFile: invalid HTTPS URL.");
+		return false;
+	}
 
-	DebugLog("Failed, trying fallback...");
-	std::string psCmd = "powershell -NoProfile -NonInteractive -Command Invoke-WebRequest -Uri '" + url + "' -OutFile '" + destPath + "'";
-	ret = RunProcess(psCmd);
-	return ret == 0 && GetFileAttributesA(destPath.c_str()) != INVALID_FILE_ATTRIBUTES;
+	TlsConnection tls;
+	tls.sock = ConnectTcp(parsed.host, parsed.port);
+	if (tls.sock == INVALID_SOCKET)
+		return false;
+
+	bool ok = false;
+	std::string response;
+	std::string request = "GET " + parsed.path + " HTTP/1.1\r\nHost: " + parsed.host + "\r\nUser-Agent: LunarisUpdater/1.0\r\nAccept: */*\r\nConnection: close\r\n\r\n";
+	if (TlsHandshake(tls, parsed.host) &&
+		TlsSend(tls, request) &&
+		TlsReadAll(tls, response))
+		ok = WriteHttpBodyToFile(response, destPath);
+	CloseTls(tls);
+
+	if (!ok)
+		DeleteFileA(destPath.c_str());
+	return ok && GetFileAttributesA(destPath.c_str()) != INVALID_FILE_ATTRIBUTES;
 }
 
 static std::string FetchText(const std::string& url) {

@@ -25,7 +25,7 @@ namespace Lunaris
 		[DllImport("winhttp.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
 		public static extern void ClearCache();
 
-		public static Version version = new("0.1.4");
+		public static Version version = new("0.1.5");
 
 		public static int fpsCount = 0;
 		public static int fpsFrame = 0;

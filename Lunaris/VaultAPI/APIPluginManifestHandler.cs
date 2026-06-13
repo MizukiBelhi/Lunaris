@@ -17,15 +17,12 @@ namespace Lunaris
 
 	internal class APIPluginManifestHandler
 	{
-		static string SanitizeFileName(string fileName)
+		private static readonly HashSet<string> AssetBlacklist = new(StringComparer.OrdinalIgnoreCase)
 		{
-			var name = Path.GetFileName(fileName);
-			if (string.IsNullOrWhiteSpace(name)) return null;
-			var fullPath = Path.GetFullPath(Path.Combine(PluginLoader.pluginPath, name));
-			if (!fullPath.StartsWith(Path.GetFullPath(PluginLoader.pluginPath) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-				return null;
-			return fullPath;
-		}
+			"cimgui.dll",
+		};
+
+		private static bool IsBlacklistedAsset(string fileName) => AssetBlacklist.Contains(fileName);
 
 		public static (string mainDll, byte[] pluginBytes, Dictionary<string, byte[]> dependencies) LoadZip(byte[] pluginZipBytes)
 		{
@@ -40,28 +37,29 @@ namespace Lunaris
 				using var ms = new MemoryStream();
 				manifestEntry.Open().CopyTo(ms);
 				var zipManifest = JsonConvert.DeserializeObject<ZipManifest>(System.Text.Encoding.UTF8.GetString(ms.ToArray()));
-				mainDll = SanitizeFileName(zipManifest?.MainDll);
+				mainDll = zipManifest?.MainDll;
 
-				if (mainDll == null) { Bridge.Logger.LogError("No mainDll in manifest"); return (null, null, null); }
+				if (string.IsNullOrWhiteSpace(mainDll)) { Bridge.Logger.LogError("No mainDll in manifest"); return (null, null, null); }
+				if (IsBlacklistedAsset(mainDll)) { Bridge.Logger.LogError($"Blocked blacklisted main file: {mainDll}"); return (null, null, null); }
 
 				var dllEntry = zip.Entries.FirstOrDefault(e => e.Name == zipManifest?.MainDll);
 				if (dllEntry == null) { Bridge.Logger.LogError($"{zipManifest?.MainDll} not found in zip"); return (null, null, null); }
 
-				if (zipManifest.Files.Count > 1)
+				if (zipManifest.Files != null && zipManifest.Files.Count > 0)
 				{
 					dependencies = [];
 					foreach (var fileName in zipManifest.Files)
 					{
+						if (string.IsNullOrWhiteSpace(fileName)) continue;
 						if (fileName == mainDll) continue;
-						var safePath = SanitizeFileName(fileName);
-						if (safePath == null) { Bridge.Logger.LogWarning($"Skipping unsafe path in manifest: {fileName}"); continue; }
+						if (IsBlacklistedAsset(fileName)) { Bridge.Logger.LogWarning($"Skipping blacklisted asset: {fileName}"); continue; }
 
 						var entry = zip.Entries.FirstOrDefault(e => e.Name == fileName);
 						if (entry == null) continue;
 
 						using var dllStr = new MemoryStream();
 						entry.Open().CopyTo(dllStr);
-						dependencies.Add(fileName, dllStr.ToArray());
+						dependencies[fileName] = dllStr.ToArray();
 					}
 				}
 
