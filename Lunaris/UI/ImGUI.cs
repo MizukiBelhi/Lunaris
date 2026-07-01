@@ -190,6 +190,7 @@ namespace Lunaris
 
 		static IntPtr HookedWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
 		{
+			bool handledHotkey = false;
 			switch (msg)
 			{
 				case 0x0200:
@@ -223,7 +224,7 @@ namespace Lunaris
 				case 0x0104:
 				{
 					if (!IsModifierVK((int)wParam))
-						ConfigHandler.NotifyVKey((int)wParam, down: true);
+						handledHotkey = ConfigHandler.NotifyVKey((int)wParam, down: true);
 					_heldKeys.Add(wParam);
 					ImGuiKey key = MapKey(wParam);
 					if (key != ImGuiKey.None) SendKey(key, true);
@@ -233,7 +234,7 @@ namespace Lunaris
 				case 0x0105:
 				{
 					if (!IsModifierVK((int)wParam))
-						ConfigHandler.NotifyVKey((int)wParam, down: false);
+						handledHotkey = ConfigHandler.NotifyVKey((int)wParam, down: false);
 					_heldKeys.Remove(wParam);
 					ImGuiKey key = MapKey(wParam);
 					if (key != ImGuiKey.None) SendKey(key, false);
@@ -250,7 +251,7 @@ namespace Lunaris
 				case 0x0101:
 				case 0x0104:
 				case 0x0105:
-					UpdateModifiers();
+					handledHotkey |= UpdateModifiers();
 				break;
 			}
 
@@ -279,10 +280,12 @@ namespace Lunaris
 					case 0x0102:
 					case 0x0104:
 					case 0x0105:
-					case 0x00FF:
 					return IntPtr.Zero;
 				}
 			}
+
+			if (handledHotkey)
+				return IntPtr.Zero;
 
 			return CallWindowProc(originalWndProc, hWnd, msg, wParam, lParam);
 		}
@@ -296,8 +299,9 @@ namespace Lunaris
 		internal static bool LAlt => _lalt;
 		internal static bool RAlt => _ralt;
 
-		private static void UpdateModifiers()
+		private static bool UpdateModifiers()
 		{
+			bool handled = false;
 			bool lshift = (GetKeyState(0xA0) & 0x8000) != 0;
 			bool rshift = (GetKeyState(0xA1) & 0x8000) != 0;
 			bool lctrl = (GetKeyState(0xA2) & 0x8000) != 0;
@@ -307,16 +311,17 @@ namespace Lunaris
 			bool lwin = (GetKeyState(0x5B) & 0x8000) != 0;
 			bool rwin = (GetKeyState(0x5C) & 0x8000) != 0;
 
-			if (lshift != _lshift) { ConfigHandler.NotifyVKey(0xA0, lshift); _lshift = lshift; }
-			if (rshift != _rshift) { ConfigHandler.NotifyVKey(0xA1, rshift); _rshift = rshift; }
-			if (lctrl != _lctrl) { ConfigHandler.NotifyVKey(0xA2, lctrl); _lctrl = lctrl; }
-			if (rctrl != _rctrl) { ConfigHandler.NotifyVKey(0xA3, rctrl); _rctrl = rctrl; }
-			if (lalt != _lalt) { ConfigHandler.NotifyVKey(0xA4, lalt); _lalt = lalt; }
-			if (ralt != _ralt) { ConfigHandler.NotifyVKey(0xA5, ralt); _ralt = ralt; }
-			if (lwin != _lwin) { ConfigHandler.NotifyVKey(0x5B, lwin); _lwin = lwin; }
-			if (rwin != _rwin) { ConfigHandler.NotifyVKey(0x5C, rwin); _rwin = rwin; }
+			if (lshift != _lshift) { handled |= ConfigHandler.NotifyVKey(0xA0, lshift); _lshift = lshift; }
+			if (rshift != _rshift) { handled |= ConfigHandler.NotifyVKey(0xA1, rshift); _rshift = rshift; }
+			if (lctrl != _lctrl) { handled |= ConfigHandler.NotifyVKey(0xA2, lctrl); _lctrl = lctrl; }
+			if (rctrl != _rctrl) { handled |= ConfigHandler.NotifyVKey(0xA3, rctrl); _rctrl = rctrl; }
+			if (lalt != _lalt) { handled |= ConfigHandler.NotifyVKey(0xA4, lalt); _lalt = lalt; }
+			if (ralt != _ralt) { handled |= ConfigHandler.NotifyVKey(0xA5, ralt); _ralt = ralt; }
+			if (lwin != _lwin) { handled |= ConfigHandler.NotifyVKey(0x5B, lwin); _lwin = lwin; }
+			if (rwin != _rwin) { handled |= ConfigHandler.NotifyVKey(0x5C, rwin); _rwin = rwin; }
 
 			SetKeyModifiers(lctrl || rctrl, lshift || rshift, lalt || ralt, lwin || rwin);
+			return handled;
 		}
 
 		private static ImGuiKey MapKey(IntPtr wParam)

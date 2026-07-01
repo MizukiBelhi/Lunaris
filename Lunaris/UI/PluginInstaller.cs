@@ -65,13 +65,28 @@ namespace Lunaris
 			categories.Add(new CategoryInfo("All", GroupKind.All));
 		}
 
-		public void AddInstalledPlugin(PluginDescriptor desc)
+		public void AddInstalledPlugin(PluginDescriptor desc, PluginDescriptor replaced = null)
 		{
-			var plg = new PluginListItem(desc.Manifest.DisplayName, desc) { IsInstalled = true };
-			pluginsInstalled.Add(plg);
+			var plg = replaced != null ? pluginsInstalled.FirstOrDefault(t => t.desc == replaced) : pluginsInstalled.FirstOrDefault(t => t.desc.Id == desc.Id);
 
-			if(desc.Manifest.IconBlob != null && desc.Manifest.IconBlob.Length > 0)
-				plg.icon = BlobToTexture(desc.Manifest.IconBlob);
+			if (plg == null)
+			{
+				plg = new PluginListItem(desc.Manifest.DisplayName, desc) { IsInstalled = true };
+				pluginsInstalled.Add(plg);
+			}
+			else
+			{
+				plg.pluginName = desc.Manifest.DisplayName;
+				plg.desc = desc;
+				plg.manifest = desc.Manifest;
+				plg.SelectedVersion = desc.Manifest.Version;
+				plg.Downloads = desc.Manifest.DownloadCount;
+				plg.IsInstalled = true;
+				plg.IsLoaded = desc.IsLoaded;
+				plg.hasUpdate = false;
+			}
+
+			plg.icon = desc.Manifest.IconBlob != null && desc.Manifest.IconBlob.Length > 0 ? BlobToTexture(desc.Manifest.IconBlob) : null;
 		}
 
 		public void SetInstalledPluginLoaded(PluginDescriptor desc)
@@ -232,7 +247,7 @@ namespace Lunaris
 					{
 						//version check right here
 						Version v1 = new(f.desc.Version);
-						
+
 						if(manifest.AllVersions != null && manifest.AllVersions.Count != 0)
 						{
 							foreach(var ver in manifest.AllVersions)
@@ -305,7 +320,7 @@ namespace Lunaris
 
 			var globalScale = 1.25f;
 			var yPos = ImGui.GetCursorPosY() - (5 * globalScale) + 5;
-			
+
 
 			var searchInputWidth = 180 * globalScale;
 			var searchClearButtonWidth = 25 * globalScale;
@@ -400,7 +415,7 @@ namespace Lunaris
 
 				UpdateCategoriesOnSearchChange();
 			}
-			
+
 
 			ImGui.SameLine();
 			ImGui.SetCursorPosY(yPos - 10);
@@ -611,7 +626,7 @@ namespace Lunaris
 						if (!isCurrent)
 							CurrentGroupKind = groupInfo.GroupKind;
 
-						
+
 					}
 					//ImGui.Dummy(new System.Numerics.Vector2(5));
 				}
@@ -831,7 +846,7 @@ namespace Lunaris
 
 				//ImGui.SameLine();
 				//ImGui.TextColored(UI.LunarisColors.LunarisGrey3, "Author");
-				
+
 				ImGui.SetCursorPosX(startPosX);
 				if (!string.IsNullOrWhiteSpace(plugin.desc.Description))
 				{
@@ -867,7 +882,7 @@ namespace Lunaris
 				{
 
 					DrawPluginControlButton(plugin);
-					
+
 					if(flags.HasFlag(PluginHeaderFlags.UpdateAvailable))
 						DrawPluginUpdateButton(plugin);
 					if (plugin.desc.Manifest.IsFromAPI)
@@ -969,7 +984,7 @@ namespace Lunaris
 				isWindowOpen = false;
 			}
 
-			
+
 		}
 
 
@@ -1159,7 +1174,7 @@ namespace Lunaris
 						if (UI.Settings.AskForPerms)
 						{
 							ImGui.OpenPopup($"Are you sure you want to enable {plugin.pluginName}?##AskPluginEnable");
-							
+
 						}
 						else
 							LoadPlugin(plugin);
@@ -1440,7 +1455,7 @@ namespace Lunaris
 
 			var overlayAlpha = 1.0f;
 
-			
+
 
 			ImGui.SetCursorPos(startCursor + new System.Numerics.Vector2(2, 0));
 			if (ImGui.IsRectVisible(rectOffset + cursorBeforeImage, rectOffset + cursorBeforeImage + iconSize))
@@ -1676,7 +1691,7 @@ namespace Lunaris
 			return isOpen;
 		}
 
-		
+
 		internal static void VerifiedCheckmarkFadeTooltip(string source, string tooltip)
 		{
 			uint id = ImGui.GetID(source);
@@ -1740,7 +1755,7 @@ namespace Lunaris
 			ImGui.Dummy(new System.Numerics.Vector2(ImGui.CalcTextSize(iconStr).X, ImGui.GetFontSize()+5));
 			ImGui.PopFont();
 
-			
+
 
 
 
@@ -1879,7 +1894,7 @@ namespace Lunaris
 			public void Load()
 			{
 				if (string.IsNullOrEmpty(desc.filePath))
-					desc.filePath = PluginAssemblyUtils.CopyToCache(desc.OriginalFilePath);
+					desc.filePath = PluginAssemblyUtils.CopyToCache(desc.OriginalFilePath, true);
 
 				if(desc.filePath == null)
 				{
@@ -1975,7 +1990,7 @@ namespace Lunaris
 							Notifications.Add(new Notification(NotificationType.Warning, $"{desc.Manifest.DisplayName} Updated!", Notifications.DefaultDuration));
 							IsOpen = false;
 
-							desc.filePath = PluginAssemblyUtils.CopyToCache(p);
+							desc.filePath = PluginAssemblyUtils.CopyToCache(p, true);
 
 							//Auto enable plugin thingy
 							if (wasLoaded)
@@ -2097,7 +2112,7 @@ namespace Lunaris
 							Notifications.Add(new Notification(NotificationType.Warning, $"{manifest.DisplayName} Installed!", Notifications.DefaultDuration));
 							IsOpen = false;
 
-							desc.filePath = PluginAssemblyUtils.CopyToCache(p);
+							desc.filePath = PluginAssemblyUtils.CopyToCache(p, true);
 
 							//Auto enable plugin thingy
 							if (UI.Settings.AutoEnablePlugin)
@@ -2110,7 +2125,7 @@ namespace Lunaris
 						});
 					});
 				});
-				
+
 			}
 
 			public void ScheduleDeletion(bool scheduled)

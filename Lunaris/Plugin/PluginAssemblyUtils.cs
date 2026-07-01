@@ -74,7 +74,7 @@ namespace Lunaris
 			return outMs.ToArray();
 		}
 
-		internal static string CopyToCache(string originalPath)
+		internal static string CopyToCache(string originalPath, bool renameAssembly = false)
 		{
 			try
 			{
@@ -89,7 +89,10 @@ namespace Lunaris
 				var targetLoc = Path.GetFullPath(targetPath);
 
 				AssemblyHooks.AddLoc(targetLoc, originalPath);
-				File.Copy(originalPath, targetPath, true);
+				if (renameAssembly)
+					CopyRenamedAssembly(originalPath, targetPath, ticks.ToString("N"));
+				else
+					File.Copy(originalPath, targetPath, true);
 
 				foreach (var symPath in new[] { originalPath + ".mdb", Path.ChangeExtension(originalPath, ".pdb") })
 				{
@@ -105,6 +108,30 @@ namespace Lunaris
 				Debug.LogError($"Cache: Failed to copy {originalPath}: {ex.Message}");
 				return null;
 			}
+		}
+
+		internal static Guid GetMvid(string path)
+		{
+			var readerParams = new ReaderParameters { ReadingMode = ReadingMode.Immediate, InMemory = true };
+			using var ms = new MemoryStream(File.ReadAllBytes(path));
+			using var assembly = AssemblyDefinition.ReadAssembly(ms, readerParams);
+			return assembly.MainModule.Mvid;
+		}
+
+		private static void CopyRenamedAssembly(string originalPath, string targetPath, string suffix)
+		{
+			var readerParams = new ReaderParameters
+			{
+				ReadingMode = ReadingMode.Immediate,
+				InMemory = true,
+				AssemblyResolver = HarmonyFixes.resolver
+			};
+
+			using var ms = new MemoryStream(File.ReadAllBytes(originalPath));
+			using var assembly = AssemblyDefinition.ReadAssembly(ms, readerParams);
+			assembly.Name.Name = $"{assembly.Name.Name}_{suffix}";
+			assembly.MainModule.Name = Path.GetFileName(targetPath);
+			assembly.Write(targetPath);
 		}
 
 		internal static bool IsManagedAssembly(string path)

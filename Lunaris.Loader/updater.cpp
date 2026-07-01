@@ -141,6 +141,16 @@ static std::string Sha256File(const std::string& path) {
 	return std::string(hex);
 }
 
+static bool FileExists(const std::string& path) {
+#ifdef _WIN32
+	DWORD attr = GetFileAttributesA(path.c_str());
+	return attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY);
+#else
+	struct stat st = {};
+	return stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+#endif
+}
+
 
 static bool IsValidHttpsUrl(const std::string& url) {
 	if (url.size() < 9 || url.size() > 2048) return false;
@@ -757,16 +767,31 @@ void CheckAndUpdate() {
 	LunarisVersion remote = ParseVersion(versionStr);
 	LunarisVersion local = GetStoredVersion();
 
-	if (!(remote > local)) {
+	std::string folder = GetDllFolder();
+	if (folder.empty()) {
+		DebugLog("Update check failed: could not determine DLL folder.");
+		return;
+	}
+
+	std::string lunarisDest = folder + "Lunaris.dll";
+	std::string bootDest = folder + "Lunaris.Boot.dll";
+
+	bool shouldDownload = remote > local;
+	if (!shouldDownload) {
+		bool missingFile = !FileExists(lunarisDest) || !FileExists(bootDest);
+		if (missingFile) {
+			DebugLog("Required Lunaris DLLs are missing. Downloading...");
+			shouldDownload = true;
+		}
+	}
+
+	if (!shouldDownload) {
 		DebugLog("Lunaris is up to date.");
 		return;
 	}
 
-	DebugLog(("Update found: " + versionStr + ". Downloading...").c_str());
-
-	std::string folder = GetDllFolder();
-	std::string lunarisDest = folder + "Lunaris.dll";
-	std::string bootDest = folder + "Lunaris.Boot.dll";
+	if (remote > local)
+		DebugLog(("Update found: " + versionStr + ". Downloading...").c_str());
 
 	bool ok1 = DownloadFile(lunarisUrl, lunarisDest);
 	bool ok2 = DownloadFile(bootUrl, bootDest);

@@ -9,7 +9,7 @@ namespace Lunaris
 {
 	internal interface IPluginLoader
 	{
-		bool LoadPlugin(PluginDescriptor descriptor, bool full);
+		bool LoadPlugin(PluginDescriptor descriptor, bool full, PluginDescriptor replacing = null);
 		bool LoadPluginFromBytes(PluginDescriptor descriptor);
 	}
 }

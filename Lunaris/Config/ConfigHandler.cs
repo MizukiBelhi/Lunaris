@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
@@ -13,6 +14,9 @@ namespace Lunaris.Config
 		private static readonly Dictionary<string, List<IConfigHandleInternal>> _handles = [];
 		private static Dictionary<string, List<(string Plugin, string Config, string Property)>> _conflictCache;
 		private static bool _conflictsDirty = true;
+		private static readonly HashSet<int> _heldVKs = [];
+		private static readonly Dictionary<int, int> _downFrames = [];
+		private static readonly Dictionary<int, int> _upFrames = [];
 
 		internal static void InvalidateConflicts() => _conflictsDirty = true;
 
@@ -26,6 +30,15 @@ namespace Lunaris.Config
 		{
 			_configs.TryRemove(name, out _);
 			RemoveHandles(name);
+		}
+
+		internal static void DeleteConfig(string name)
+		{
+			Remove(name);
+
+			var path = Path.Combine(PluginLoader.configPath, $"{name}.lpcfg");
+			try { if (File.Exists(path)) File.Delete(path); }
+			catch (Exception ex) { Bridge.Logger.LogWarning($"Could not delete config '{path}': {ex.Message}"); }
 		}
 
 		public static IConfig Get(string name) => _configs.TryGetValue(name, out var cfg) ? cfg : null;
@@ -133,11 +146,58 @@ namespace Lunaris.Config
 		internal static IEnumerable<IConfigHandleInternal> GetAllHandles() => _handles.Values.SelectMany(x => x);
 		private static void RemoveHandles(string pluginName) => _handles.Remove(pluginName);
 
-		internal static void NotifyVKey(int vk, bool down)
+		internal static bool NotifyVKey(int vk, bool down)
 		{
+			if (vk == 0) return false;
+
+			var frame = Time.frameCount;
+			if (down)
+			{
+				if (!_heldVKs.Contains(vk))
+					_downFrames[vk] = frame;
+				_heldVKs.Add(vk);
+			}
+			else
+			{
+				if (_heldVKs.Contains(vk))
+					_upFrames[vk] = frame;
+				_heldVKs.Remove(vk);
+			}
+
+			bool handled = false;
 			foreach (var handle in GetAllHandles())
 				foreach (var kb in handle.GetKeybinds().Values)
+				{
 					kb.NotifyVKey(vk, down);
+					if (kb.IsPressed || kb.IsReleased)
+						handled = true;
+				}
+
+			return handled;
+		}
+
+		internal static bool IsShortcutDown(KeyCode mainKey, IEnumerable<KeyCode> modifiers) => IsShortcutState(mainKey, modifiers, ShortcutState.Down);
+		internal static bool IsShortcutPressed(KeyCode mainKey, IEnumerable<KeyCode> modifiers) => IsShortcutState(mainKey, modifiers, ShortcutState.Pressed);
+		internal static bool IsShortcutUp(KeyCode mainKey, IEnumerable<KeyCode> modifiers) => IsShortcutState(mainKey, modifiers, ShortcutState.Up);
+
+		private enum ShortcutState { Down, Pressed, Up }
+
+		private static bool IsShortcutState(KeyCode mainKey, IEnumerable<KeyCode> modifiers, ShortcutState state)
+		{
+			var mainVK = KeybindEntry.KeyToVK(mainKey);
+			if (mainVK == 0) return false;
+
+			var modifierVKs = (modifiers ?? []).Select(KeybindEntry.KeyToVK).Where(vk => vk != 0).ToHashSet();
+			var required = modifierVKs.Append(mainVK).ToHashSet();
+			var frame = Time.frameCount;
+
+			return state switch
+			{
+				ShortcutState.Down => _downFrames.TryGetValue(mainVK, out var downFrame) && downFrame == frame && _heldVKs.SetEquals(required),
+				ShortcutState.Pressed => _heldVKs.SetEquals(required),
+				ShortcutState.Up => _upFrames.TryGetValue(mainVK, out var upFrame) && upFrame == frame && _heldVKs.SetEquals(modifierVKs),
+				_ => false
+			};
 		}
 
 		internal static ConfigHandle<BepInKeybinds> GetOrCreateHandle(string pluginName)

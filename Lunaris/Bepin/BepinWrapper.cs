@@ -112,12 +112,17 @@ namespace Lunaris
 						{
 							var kb = ((ConfigInstance)cfg).RegisterKeybind(key, [], "");
 
-							var mainKey = kb.Keys[0];
+							if (kb.Keys.Length == 0)
+								return BepInEx.Configuration.KeyboardShortcut.Empty;
+
+							var mainKey = kb.Keys.FirstOrDefault(k => !IsShortcutModifier(k));
+							if (mainKey == KeyCode.None)
+								mainKey = kb.Keys[0];
 							var mods = kb.Keys.Where(k => k != mainKey).ToArray();
 
 							if (_bpks.TryGetValue(pln + key, out BepInEx.Configuration.KeyboardShortcut sk))
 							{
-								if (sk.MainKey != mainKey || sk.Modifiers != mods)
+								if (sk.MainKey != mainKey || !sk.Modifiers.SequenceEqual(mods))
 								{
 									sk = new BepInEx.Configuration.KeyboardShortcut(mainKey, mods);
 									_bpks[pln + key] = sk;
@@ -178,6 +183,11 @@ namespace Lunaris
 					return new KeyCode[]{ keys[0] }.Concat(from x in keys.Skip(1).Distinct() where x != keys[0] orderby x select x).ToArray();
 				}
 			}
+			if(classType.Name == "TomlTypeConverter")
+			{
+				if(methodName == "AddConverter" && args.Length == 2)
+					return false;
+			}
 
 			if(classType.Name == "Logger")
 			{
@@ -200,11 +210,19 @@ namespace Lunaris
 			{
 				if (methodName == "IsDown")
 				{
-					return false;
+					return KeyboardShortcutState(instance, methodName);
+				}
+				if (methodName == "IsPressed")
+				{
+					return KeyboardShortcutState(instance, methodName);
+				}
+				if (methodName == "IsUp")
+				{
+					return KeyboardShortcutState(instance, methodName);
 				}
 				if(methodName == "ToString")
 				{
-					return "NULL";
+					return instance?.ToString() ?? "None";
 				}
 			}
 
@@ -213,6 +231,27 @@ namespace Lunaris
 			if (returnType == typeof(void)) return null;
 			return returnType.IsValueType ? Activator.CreateInstance(returnType) : null;
 		}
+
+		private static bool KeyboardShortcutState(object instance, string methodName)
+		{
+			if (instance == null) return false;
+
+			var shortcutType = instance.GetType();
+			var mainKey = (KeyCode)shortcutType.GetProperty("MainKey").GetValue(instance);
+			var modifiers = ((System.Collections.IEnumerable)shortcutType.GetProperty("Modifiers").GetValue(instance))
+				.Cast<object>()
+				.Select(m => (KeyCode)(int)m);
+
+			return methodName switch
+			{
+				"IsDown" => ConfigHandler.IsShortcutDown(mainKey, modifiers),
+				"IsPressed" => ConfigHandler.IsShortcutPressed(mainKey, modifiers),
+				"IsUp" => ConfigHandler.IsShortcutUp(mainKey, modifiers),
+				_ => false
+			};
+		}
+
+		private static bool IsShortcutModifier(KeyCode key) => key is KeyCode.LeftShift or KeyCode.RightShift or KeyCode.LeftControl or KeyCode.RightControl or KeyCode.LeftAlt or KeyCode.RightAlt or KeyCode.LeftWindows or KeyCode.RightWindows;
 
 		public static void CtorWrapper(object instance, Type classType, object[] args)
 		{

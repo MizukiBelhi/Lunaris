@@ -12,12 +12,57 @@ namespace Lunaris
 	{
 		private static readonly List<LibraryDescriptor> _libraries = [];
 		private static readonly List<LibraryDescriptor> _loadQueue = [];
+		private static bool _resolverInstalled = false;
 
 		internal static IReadOnlyList<LibraryDescriptor> Libraries => _libraries;
+
+		internal static void InstallResolver()
+		{
+			if (_resolverInstalled) return;
+			_resolverInstalled = true;
+			AppDomain.CurrentDomain.AssemblyResolve += ResolveAssembly;
+		}
 
 		internal static void Enqueue(LibraryDescriptor lib)
 		{
 			_loadQueue.Add(lib);
+		}
+
+		private static Assembly ResolveAssembly(object sender, ResolveEventArgs args)
+		{
+			var assemblyName = new AssemblyName(args.Name).Name;
+
+			var plugin = PluginLoader.GetPluginByAssemblyName(assemblyName);
+			if (plugin?.Assembly != null)
+				return plugin.Assembly;
+
+			var lib = _libraries.FirstOrDefault(l => l.Name == assemblyName);
+			if (lib?.assembly != null)
+				return lib.assembly;
+
+			var file = FindAssemblyFile(assemblyName);
+			if (file == null) return null;
+
+			var desc = new LibraryDescriptor { OriginalFilePath = file, Name = assemblyName };
+			Enqueue(desc);
+			LoadQueued();
+			return desc.assembly;
+		}
+
+		private static string FindAssemblyFile(string assemblyName)
+		{
+			foreach (var file in Directory.GetFiles(PluginLoader.pluginPath, "*.dll", SearchOption.AllDirectories))
+			{
+				if (file.Split(Path.DirectorySeparatorChar).Contains("config")) continue;
+				if (!PluginAssemblyUtils.IsManagedAssembly(file)) continue;
+
+				using var ms = new MemoryStream(File.ReadAllBytes(file));
+				using var ass = AssemblyDefinition.ReadAssembly(ms);
+				if (ass.Name.Name == assemblyName)
+					return file;
+			}
+
+			return null;
 		}
 
 		internal static void LoadQueued()

@@ -231,8 +231,7 @@ namespace Lunaris
 			try
 			{
 				var requestedName = new AssemblyName(args.Name).Name;
-				Lunaris.DebugLog($"EmbeddedAssemblyLoader trying to resolve {requestedName} \n {args.Name}");
-				var already = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a =>
+				var already = IsHotReloadAssemblyName(requestedName) ? null : AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a =>
 				{
 					try { return string.Equals(a.GetName().Name, requestedName, StringComparison.OrdinalIgnoreCase); }
 					catch { return false; }
@@ -255,13 +254,9 @@ namespace Lunaris
 						//try embed
 						resourceName = exec.GetManifestResourceNames().FirstOrDefault(r => r.EndsWith("Lunaris."+requestedName + ".dll", StringComparison.OrdinalIgnoreCase));
 						if (resourceName == null)
-						{
-							Lunaris.DebugLog($"EmbeddedAssemblyLoader failed to resolve {requestedName} \n {args.Name}");
 							return null;
-						}
 					}
 
-					Lunaris.DebugLog($"EmbeddedAssemblyLoader failed to resolve {requestedName} \n {args.Name}");
 					return null;
 					/*using (var s = exec.GetManifestResourceStream(resourceName))
 					{
@@ -282,7 +277,25 @@ namespace Lunaris
 				return null;
 			}
 
-			
+		}
+
+		private static bool IsHotReloadAssemblyName(string name)
+		{
+			if (string.IsNullOrEmpty(name)) return false;
+
+			var separator = name.LastIndexOf('_');
+			if (separator < 0) return false;
+
+			var suffix = name.Substring(separator + 1);
+			if (suffix.Length != 32) return false;
+
+			foreach (var c in suffix)
+			{
+				if ((c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F'))
+					return false;
+			}
+
+			return true;
 		}
 
 		private static bool _started = false;

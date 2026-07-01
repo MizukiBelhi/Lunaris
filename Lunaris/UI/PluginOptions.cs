@@ -26,6 +26,22 @@ namespace Lunaris
 			plugin.IsOptionsOpen = true;
 		}
 
+		public static void Close(string pluginId, string pluginName = null)
+		{
+			var plugins = _plugins.Where(p => p.desc?.Id == pluginId || p.desc?.Manifest?.Id == pluginId).ToList();
+			foreach (var plugin in plugins)
+			{
+				plugin.IsOptionsOpen = false;
+				_plugins.Remove(plugin);
+			}
+
+			if (_capturing?.Plugin == pluginId || (!string.IsNullOrEmpty(pluginName) && _capturing?.Plugin == pluginName))
+			{
+				_capturing = null;
+				_captureKeys.Clear();
+			}
+		}
+
 		public static void Draw()
 		{
 			var copy = new List<PluginListItem>(_plugins);
@@ -300,9 +316,21 @@ namespace Lunaris
 					ImGui.SameLine();
 					ImGui.SetCursorPosX(_sizeCache[pluginName]);
 
-					DrawField(set.Key, set.Value, range, updated => cfg.Write(set.Key, updated), true);
+					DrawField(set.Key, set.Value, range, updated => WriteCachedSetting(cfg, sectionVar, i, set.Key, updated), true);
 				}
 			}
+		}
+
+		private static void WriteCachedSetting(IConfig cfg, _SECTIONSTORE section, int index, string key, object value)
+		{
+			cfg.Write(key, value);
+			section.settings[index] = new KeyValuePair<string, object>(key, value);
+		}
+
+		private static void InvalidateCache(string pluginName)
+		{
+			_sizeCache.Remove(pluginName);
+			_sectionCache.Remove(pluginName);
 		}
 
 		internal static void DrawFooter(PluginListItem plugin, string sanName, ref bool opn)
@@ -331,6 +359,7 @@ namespace Lunaris
 				if (ImGui.Button("OK", new System.Numerics.Vector2(120, 0)))
 				{
 					ConfigHandler.Get(sanName)?.Reset();
+					InvalidateCache(sanName);
 					ImGui.CloseCurrentPopup();
 				}
 

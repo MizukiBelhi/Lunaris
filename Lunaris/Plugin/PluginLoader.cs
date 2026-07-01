@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using Lunaris.Message;
+using Lunaris.Config;
 
 namespace Lunaris
 {
@@ -32,6 +33,7 @@ namespace Lunaris
 			if (!Directory.Exists(cacheRoot))
 				Directory.CreateDirectory(cacheRoot);
 
+			LibraryLoader.InstallResolver();
 			OnInitLoadPlugins();
 			LibraryLoader.LoadQueued();
 			PluginUpdateChecker.CheckAll();
@@ -74,7 +76,7 @@ namespace Lunaris
 			int enabledCount = 0;
 			foreach (var desc in enabled)
 			{
-				desc.filePath = PluginAssemblyUtils.CopyToCache(desc.OriginalFilePath);
+				desc.filePath = PluginAssemblyUtils.CopyToCache(desc.OriginalFilePath, true);
 				if(desc.filePath == null)
 				{
 					Notifications.Add(new Notification(NotificationType.Error, $"Could not enable {desc.SetPluginName}", Notifications.DefaultDuration));
@@ -101,9 +103,11 @@ namespace Lunaris
 		{
 			try
 			{
+				var replacing = pluginIndex >= 0 && pluginIndex < _plugins.Count ? _plugins[pluginIndex] : null;
+				if (pluginIndex != -1 && replacing == null) return (false, null);
 
 				var existing = _plugins.FirstOrDefault(t => t.filePath == file);
-				if (existing != null) return (true, existing);
+				if (existing != null && existing != replacing) return (true, existing);
 
 				var desc = new PluginDescriptor
 				{
@@ -141,32 +145,43 @@ namespace Lunaris
 					return (false, null);
 				}
 
-				var scanned = loader.LoadPlugin(desc, false);
+				var scanned = loader.LoadPlugin(desc, false, replacing);
 				if (!scanned) return (false, null);
 
 				if (register)
 				{
-					if (pluginIndex != -1) _plugins[pluginIndex] = desc;
-					else _plugins.Add(desc);
-
 					desc.Id = PluginAssemblyUtils.GetGuid(desc.OriginalFilePath);
 					ApplyOrCreateManifest(desc);
 
 					var deps = LibraryLoader.CollectDependencies(desc.Definition);
 					if (deps != null)
-					{
 						desc.Manifest.Dependencies = deps;
+
+					if (replacing != null)
+					{
+						desc.filePath = PluginAssemblyUtils.CopyToCache(desc.OriginalFilePath, true);
+						if (desc.filePath == null) return (false, null);
+
+						_plugins[pluginIndex] = desc;
+					}
+					else _plugins.Add(desc);
+
+					if (deps != null)
+					{
 						foreach (var dep in deps)
 							LibraryLoader.RegisterDependency(desc.Id, dep);
 					}
 
-					UI.installer.AddInstalledPlugin(desc);
+					UI.installer.AddInstalledPlugin(desc, replacing);
 					Bridge.Logger.Log($"Plugin found: '{desc.Id}'");
 
-					if (desc.Manifest.IsFromAPI && !string.IsNullOrEmpty(desc.Manifest.Id))
-						PluginUpdateChecker.Enqueue(desc);
-					else
-						EnqueueLoad(desc);
+					if (replacing == null)
+					{
+						if (desc.Manifest.IsFromAPI && !string.IsNullOrEmpty(desc.Manifest.Id))
+							PluginUpdateChecker.Enqueue(desc);
+						else
+							EnqueueLoad(desc);
+					}
 				}
 
 				return (true, desc);
@@ -184,6 +199,17 @@ namespace Lunaris
 			var desc = _plugins.FirstOrDefault(t => t.filePath == file);
 			if (desc == null)
 			{
+				desc = _plugins.FirstOrDefault(t => t.OriginalFilePath == file);
+				if (desc != null)
+				{
+					desc.filePath = PluginAssemblyUtils.CopyToCache(desc.OriginalFilePath, true);
+					if (desc.filePath == null) return (false, null);
+					file = desc.filePath;
+				}
+			}
+
+			if (desc == null)
+			{
 				Bridge.Logger.Log($"LoadPluginFile: '{plName}'");
 				return (false, null);
 			}
@@ -195,6 +221,11 @@ namespace Lunaris
 				if (desc.Assembly == null)
 				{
 					Bridge.Logger.Log("LoadPluginFile: assembly is null");
+					return (false, null);
+				}
+				if (desc.Assembly.ManifestModule.ModuleVersionId != PluginAssemblyUtils.GetMvid(file))
+				{
+					Bridge.Logger.LogError($"LoadPluginFile: stale assembly loaded for '{plName}'");
 					return (false, null);
 				}
 
@@ -287,22 +318,14 @@ namespace Lunaris
 					try
 					{
 						PluginInitializer.CleanupPlugin(desc.Assembly);
-						foreach (var type in desc.Assembly.GetTypes())
-						{
-							foreach (var field in type.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
-							{
-								if (!field.IsLiteral && !field.FieldType.IsValueType && !field.FieldType.IsGenericType)
-									field.SetValue(null, null);
-							}
-
-							//var cctor = type.GetConstructors(BindingFlags.Static | BindingFlags.NonPublic).FirstOrDefault();
-							//cctor?.Invoke(null, null);
-						}
 					}
 					catch {  }
 				}
 
 				AssemblyHooks.RemLoc(desc.filePath);
+				desc.filePath = null;
+				desc.Assembly = null;
+				desc.GameObject = null;
 				Resources.UnloadUnusedAssets();
 				GC.Collect();
 
@@ -329,6 +352,15 @@ namespace Lunaris
 
 		internal static void RemovePlugin(PluginDescriptor desc)
 		{
+			if (desc == null)
+			{
+				Bridge.Logger.LogWarning("RemovePlugin called with null descriptor.");
+				return;
+			}
+
+			var configName = GetPluginConfigName(desc);
+			PluginOptions.Close(desc.Id, configName);
+
 			_plugins.RemoveAll(p => p.Id == desc.Id);
 
 			if (desc.Manifest?.Dependencies != null)
@@ -336,16 +368,89 @@ namespace Lunaris
 				var orphans = LibraryLoader.UnregisterPlugin(desc.Id);
 				foreach (var path in orphans)
 				{
-					try { if (File.Exists(path)) File.Delete(path); }
-					catch (Exception ex) { Bridge.Logger.LogWarning($"Could not delete lib '{path}': {ex.Message}"); }
+					if (IsDependencyUsedByRemainingPlugin(Path.GetFileName(path))) continue;
+					DeletePluginFile(path, "lib");
+				}
+
+				foreach (var dep in desc.Manifest.Dependencies)
+				{
+					if (IsDependencyUsedByRemainingPlugin(dep)) continue;
+					DeletePluginFile(ResolvePluginPath(dep), "asset");
 				}
 			}
 
 			if (File.Exists(desc.OriginalFilePath))
-				File.Delete(desc.OriginalFilePath);
+				DeletePluginFile(desc.OriginalFilePath, "plugin");
+
+			DeletePluginConfig(configName);
 
 			UI.installer.RemoveInstalledPlugin(desc.Id);
 			PluginManifestHandler.RemoveManifest(desc.Manifest?.Id);
+		}
+
+		private static bool IsDependencyUsedByRemainingPlugin(string dependency)
+		{
+			if (string.IsNullOrWhiteSpace(dependency)) return true;
+			return _plugins.Any(p => p.Manifest?.Dependencies?.Any(d => string.Equals(NormalizePluginRelativePath(d), NormalizePluginRelativePath(dependency), StringComparison.OrdinalIgnoreCase)) == true);
+		}
+
+		private static string ResolvePluginPath(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path)) return null;
+			return Path.IsPathRooted(path) ? path : Path.Combine(pluginPath, path);
+		}
+
+		private static string NormalizePluginRelativePath(string path) => path?.Replace('\\', '/').TrimStart('/');
+
+		private static void DeletePluginFile(string path, string kind)
+		{
+			if (string.IsNullOrWhiteSpace(path)) return;
+			try
+			{
+				if (!IsUnderRoot(path, pluginPath)) return;
+				if (File.Exists(path)) File.Delete(path);
+				PruneEmptyPluginDirectories(Path.GetDirectoryName(path));
+			}
+			catch (Exception ex)
+			{
+				Bridge.Logger.LogWarning($"Could not delete {kind} '{path}': {ex.Message}");
+			}
+		}
+
+		private static bool IsUnderRoot(string path, string root)
+		{
+			var fullPath = Path.GetFullPath(path);
+			var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+			return fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase);
+		}
+
+		private static void PruneEmptyPluginDirectories(string dir)
+		{
+			if (string.IsNullOrWhiteSpace(dir)) return;
+
+			var root = Path.GetFullPath(pluginPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			var current = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+			while (!string.Equals(current, root, StringComparison.OrdinalIgnoreCase) && current.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+			{
+				if (Directory.Exists(current) && !Directory.EnumerateFileSystemEntries(current).Any())
+					Directory.Delete(current);
+				else
+					break;
+
+				current = Path.GetDirectoryName(current);
+			}
+		}
+
+		private static string GetPluginConfigName(PluginDescriptor desc)
+		{
+			return desc.SetPluginName?.Replace(" ", "").ToLower();
+		}
+
+		private static void DeletePluginConfig(string configName)
+		{
+			if (!string.IsNullOrWhiteSpace(configName))
+				ConfigHandler.DeleteConfig(configName);
 		}
 
 
@@ -356,7 +461,31 @@ namespace Lunaris
 		internal static int IndexOf(PluginDescriptor desc) => _plugins.IndexOf(desc);
 		internal static PluginDescriptor GetPluginByAssemblyName(string name)
 		{
-			return _plugins.FirstOrDefault(t => t.Definition?.MainModule.Assembly.Name.Name == name);
+			var exact = _plugins.FirstOrDefault(t =>
+				string.Equals(t.Definition?.MainModule.Assembly.Name.Name, name, StringComparison.OrdinalIgnoreCase) ||
+				string.Equals(t.Assembly?.GetName().Name, name, StringComparison.OrdinalIgnoreCase));
+
+			if (exact != null)
+				return exact;
+
+			return _plugins.FirstOrDefault(t => IsHotReloadAssemblyName(name, t.Definition?.MainModule.Assembly.Name.Name));
+		}
+
+		private static bool IsHotReloadAssemblyName(string name, string originalName)
+		{
+			if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(originalName)) return false;
+			if (!name.StartsWith(originalName + "_", StringComparison.OrdinalIgnoreCase)) return false;
+
+			var suffix = name.Substring(originalName.Length + 1);
+			if (suffix.Length != 32) return false;
+
+			foreach (var c in suffix)
+			{
+				if ((c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F'))
+					return false;
+			}
+
+			return true;
 		}
 
 		private static void ApplyOrCreateManifest(PluginDescriptor desc)

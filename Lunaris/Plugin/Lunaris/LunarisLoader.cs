@@ -11,14 +11,14 @@ namespace Lunaris
 	internal class LunarisLoader : IPluginLoader
 	{
 
-		public bool LoadPlugin(PluginDescriptor descriptor, bool full)
+		public bool LoadPlugin(PluginDescriptor descriptor, bool full, PluginDescriptor replacing = null)
 		{
 			if (!full)
 			{
 				descriptor.Id = PluginAssemblyUtils.GetGuid(descriptor.OriginalFilePath);
 
 				var hasf = GetPluginFromId(descriptor.Id);
-				if (hasf != null)
+				if (hasf != null && hasf != replacing)
 				{
 					Bridge.Logger.LogError($"Plugin already loaded: '{descriptor.Id}'");
 					return false;
@@ -88,6 +88,6 @@ namespace Lunaris
 			return true;
 		}
 
-		
+
 	}
 }
