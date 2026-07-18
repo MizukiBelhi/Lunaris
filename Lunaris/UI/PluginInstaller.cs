@@ -32,6 +32,7 @@ namespace Lunaris
 		private PluginSortKind sortKind = PluginSortKind.Alphabetical;
 		private string filterText = "Alphabetical";
 		private bool adaptiveSort = false;
+		private bool resetPluginScroll = false;
 		private readonly object listLock = new();
 		private OperationStatus updateStatus = OperationStatus.Idle;
 		private OperationStatus installStatus = OperationStatus.Idle;
@@ -120,6 +121,12 @@ namespace Lunaris
 
 		static bool hasPulledAPI = false;
 		static bool isCompleteApi = false;
+		private const float NextPageScrollThreshold = 200f;
+		private static int _currentApiPage = 0;
+		private static int _totalApiPages = 1;
+		private static int _apiRequestGeneration = 0;
+		private static bool _isApiPageLoading = false;
+		private static bool _apiPageLoadFailed = false;
 		private static PluginListItem _modalPlugin;
 
 		public void OnDraw()
@@ -139,7 +146,7 @@ namespace Lunaris
 			if(!hasPulledAPI)
 			{
 				isCompleteApi = false;
-				FetchApprovedAsync(true);
+				FetchApprovedPageAsync(1, true);
 
 				hasPulledAPI = true;
 			}
@@ -226,91 +233,126 @@ namespace Lunaris
 			return tex.LoadImage(blob) ? tex : null;
 		}
 
-		internal static void FetchApprovedAsync(bool forceRefresh)
+		internal static void FetchApprovedPageAsync(int page, bool forceRefresh)
 		{
-			Task.Run(() =>
+			if (_isApiPageLoading || page < 1) return;
+
+			_isApiPageLoading = true;
+			_apiPageLoadFailed = false;
+			if (page == 1 && _currentApiPage == 0) isCompleteApi = false;
+			var generation = _apiRequestGeneration;
+
+			Task.Run(async () =>
 			{
-				var result = Bridge.PluginApi.FetchApprovedAsync(forceRefresh).Result;
-				DispatcherBehaviour.RunOnMainThread(() => OnFinishGettingAPI(result));
+				PluginManifestPage result;
+				try
+				{
+					result = await Bridge.PluginApi.FetchApprovedPageAsync(page, forceRefresh);
+				}
+				catch (Exception e)
+				{
+					Bridge.Logger.LogError($"[PluginInstaller] Failed to fetch mods page {page}: {e}");
+					result = new PluginManifestPage { Page = page, TotalPages = page };
+				}
+
+				DispatcherBehaviour.RunOnMainThread(() => OnFinishGettingAPI(result, generation));
 			});
 		}
 
-		private static void OnFinishGettingAPI(List<PluginManifest> plugins)
+		private static void OnFinishGettingAPI(PluginManifestPage result, int generation)
 		{
+			if (generation != _apiRequestGeneration) return;
+
+			_isApiPageLoading = false;
+
+			if (result == null || !result.Succeeded)
+			{
+				_apiPageLoadFailed = true;
+				if (_currentApiPage == 0) isCompleteApi = true;
+				return;
+			}
+
+			var plugins = result.Items;
+
 			if (plugins != null)
 			{
 				foreach (var manifest in plugins)
 				{
-					//skip over already installed ones
-					var f = UI.installer.pluginsInstalled.FirstOrDefault(t => t.desc.Manifest != null && t.desc.Manifest.Id == manifest.Id);
-					if (f != null)
+					try
 					{
-						//version check right here
-						Version v1 = new(f.desc.Version);
-
-						if(manifest.AllVersions != null && manifest.AllVersions.Count != 0)
-						{
-							foreach(var ver in manifest.AllVersions)
-							{
-								Version v2 = new(ver);
-
-								if(v2 > v1)
-								{
-									f.hasUpdate = true;
-									break;
-								}
-							}
-						}
-
-						f.desc.Manifest.IsFromAPI = true;
-						//update download count while at it
-						f.desc.Manifest.DownloadCount = manifest.DownloadCount;
-						//icon
-						f.desc.Manifest.IconBlob = manifest.IconBlob;
-						f.icon = BlobToTexture(manifest.IconBlob);
-						//name
-						f.desc.Manifest.DisplayName = manifest.DisplayName;
-						//descript
-						f.desc.Manifest.Description = manifest.Description;
-						//tags
-						f.desc.Manifest.Tags = manifest.Tags;
-						//author
-						f.desc.Manifest.Author = manifest.Author;
-						f.desc.Author = manifest.Author;
-
-						//Save
-						PluginManifestHandler.StoreManifest(f.desc.Manifest);
-						continue;
+						AddOrUpdateApiPlugin(manifest);
 					}
-
-					if (string.IsNullOrEmpty(manifest.Version) || manifest.Version == "-1") continue;
-
-					var desc = new PluginDescriptor
+					catch (Exception e)
 					{
-						Description = manifest.Description,
-						//Name = manifest.Name,
-						Version = manifest.Version,
-						Author = manifest.Author,
-						EffectivePermissions = LunarisPermission.LunarisPlugin,
-						DeclaredPermissions = LunarisPermission.LunarisPlugin,
-						Manifest = manifest,
-					};
-
-					manifest.IsFromAPI = true;
-
-					var nd = new PluginListItem(manifest.DisplayName, desc, manifest)
-					{
-						Downloads = manifest.DownloadCount,
-						icon = BlobToTexture(manifest.IconBlob),
-					};
-
-
-					UI.installer.pluginsAvailable.Add(nd);
-
+						Bridge.Logger.LogError($"[PluginInstaller] Failed to process mod {manifest?.Id ?? "Unknown"} from page {result.Page}: {e}");
+					}
 				}
 			}
 
-			isCompleteApi = true;
+			_currentApiPage = Math.Max(_currentApiPage, result.Page);
+			_totalApiPages = Math.Max(_currentApiPage, result.TotalPages);
+			isCompleteApi = _currentApiPage >= _totalApiPages;
+			UI.installer.ResortPlugins();
+			UI.installer.UpdateCategoriesOnPluginsChange();
+		}
+
+		private static void AddOrUpdateApiPlugin(PluginManifest manifest)
+		{
+			//skip over already installed ones
+			var installed = UI.installer.pluginsInstalled.FirstOrDefault(t => t.desc.Manifest != null && t.desc.Manifest.Id == manifest.Id);
+			if (installed != null)
+			{
+				Version installedVersion = new(installed.desc.Version);
+
+				if (manifest.AllVersions != null && manifest.AllVersions.Count != 0)
+				{
+					foreach (var version in manifest.AllVersions)
+					{
+						Version availableVersion = new(version);
+
+						if (availableVersion > installedVersion)
+						{
+							installed.hasUpdate = true;
+							break;
+						}
+					}
+				}
+
+				installed.desc.Manifest.IsFromAPI = true;
+				installed.desc.Manifest.DownloadCount = manifest.DownloadCount;
+				installed.desc.Manifest.IconBlob = manifest.IconBlob;
+				installed.icon = BlobToTexture(manifest.IconBlob);
+				installed.desc.Manifest.DisplayName = manifest.DisplayName;
+				installed.desc.Manifest.Description = manifest.Description;
+				installed.desc.Manifest.Tags = manifest.Tags;
+				installed.desc.Manifest.Author = manifest.Author;
+				installed.desc.Author = manifest.Author;
+				PluginManifestHandler.StoreManifest(installed.desc.Manifest);
+				return;
+			}
+
+			if (string.IsNullOrEmpty(manifest.Version) || manifest.Version == "-1") return;
+			if (UI.installer.pluginsAvailable.Any(t => t.desc.Manifest != null && t.desc.Manifest.Id == manifest.Id)) return;
+
+			var desc = new PluginDescriptor
+			{
+				Description = manifest.Description,
+				Version = manifest.Version,
+				Author = manifest.Author,
+				EffectivePermissions = LunarisPermission.LunarisPlugin,
+				DeclaredPermissions = LunarisPermission.LunarisPlugin,
+				Manifest = manifest,
+			};
+
+			manifest.IsFromAPI = true;
+
+			var item = new PluginListItem(manifest.DisplayName, desc, manifest)
+			{
+				Downloads = manifest.DownloadCount,
+				icon = BlobToTexture(manifest.IconBlob),
+			};
+
+			UI.installer.pluginsAvailable.Add(item);
 		}
 
 		private void DrawHeader()
@@ -514,7 +556,15 @@ namespace Lunaris
 					{
 						try
 						{
+							if (resetPluginScroll)
+							{
+								ImGui.SetScrollY(0);
+								resetPluginScroll = false;
+							}
+
 							DrawPluginCategoryContent();
+							DrawApiPaginationStatus();
+							TryLoadNextApiPage();
 						}
 						catch (Exception ex)
 						{
@@ -598,7 +648,10 @@ namespace Lunaris
 					if (ImGui.Selectable(groupInfo.Name, isCurrent, ImGuiSelectableFlags.None, categoryItemSize))
 					{
 						if (!isCurrent)
+						{
 							CurrentGroupKind = groupInfo.GroupKind;
+							resetPluginScroll = true;
+						}
 					}
 
 					if(isCurrent)
@@ -610,7 +663,10 @@ namespace Lunaris
 							if (ImGui.Selectable("\t" + option, isCurrentTag, ImGuiSelectableFlags.None, categoryItemSize))
 							{
 								if (!isCurrentTag)
+								{
 									CurrentTagKind = tag;
+									resetPluginScroll = true;
+								}
 							}
 							//ImGui.Dummy(new System.Numerics.Vector2(5));
 						}
@@ -624,7 +680,10 @@ namespace Lunaris
 					if (ImGui.Selectable(groupInfo.Name, isCurrent, ImGuiSelectableFlags.None, categoryItemSize))
 					{
 						if (!isCurrent)
+						{
 							CurrentGroupKind = groupInfo.GroupKind;
+							resetPluginScroll = true;
+						}
 
 
 					}
@@ -649,6 +708,54 @@ namespace Lunaris
 				DrawAllPluginList();
 			}
 			return;
+		}
+
+		private bool IsApiBackedGroup()
+		{
+			return CurrentGroupKind == GroupKind.Available || CurrentGroupKind == GroupKind.All;
+		}
+
+		private void DrawApiPaginationStatus()
+		{
+			if (!IsApiBackedGroup()) return;
+
+			if (_isApiPageLoading)
+			{
+				if (_currentApiPage == 0 && CurrentGroupKind == GroupKind.Available && pluginsAvailable.Count == 0) return;
+
+				var availableWidth = ImGui.GetContentRegionAvail().X;
+				ImGui.SetCursorPosX(ImGui.GetCursorPosX() + Math.Max(0, (availableWidth - 24) * 0.5f));
+				UI.DrawSpinner(24);
+			}
+			else if (_apiPageLoadFailed)
+			{
+				ImGui.TextDisabled("Could not load more plugins.");
+				ImGui.SameLine();
+				if (ImGui.Button("Retry##PluginApiPage"))
+				{
+					FetchApprovedPageAsync(_currentApiPage + 1, true);
+				}
+			}
+		}
+
+		private void TryLoadNextApiPage()
+		{
+			if (!IsApiBackedGroup() || _isApiPageLoading || _apiPageLoadFailed) return;
+			if (_currentApiPage == 0 || _currentApiPage >= _totalApiPages) return;
+			if (ImGui.GetScrollMaxY() - ImGui.GetScrollY() > NextPageScrollThreshold) return;
+
+			FetchApprovedPageAsync(_currentApiPage + 1, true);
+		}
+
+		private static void ResetApiPagination()
+		{
+			_apiRequestGeneration++;
+			_currentApiPage = 0;
+			_totalApiPages = 1;
+			_isApiPageLoading = false;
+			_apiPageLoadFailed = false;
+			isCompleteApi = false;
+			hasPulledAPI = false;
 		}
 
 		private void DrawList(List<PluginListItem> pList, bool isAvailable=false)
@@ -956,7 +1063,8 @@ namespace Lunaris
 				if (ImGui.Button("Refresh"))
 				{
 					pluginsAvailable.Clear();
-					hasPulledAPI = false;
+					ResetApiPagination();
+					UpdateCategoriesOnPluginsChange();
 				}
 			}
 

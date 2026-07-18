@@ -676,6 +676,8 @@ namespace Lunaris
 
 		public static void Dispose()
 		{
+			OnRender = null;
+
 			if (hookedHwnd != IntPtr.Zero)
 			{
 				SetWindowLongPtr(hookedHwnd, GWL_WNDPROC, originalWndProc);
@@ -684,14 +686,21 @@ namespace Lunaris
 				newWndProcDelegate = null;
 			}
 
-			ImGuiNative.igDestroyContext(_context);
+			if (_context != IntPtr.Zero)
+			{
+				ImGuiNative.igDestroyContext(_context);
+				_context = IntPtr.Zero;
+			}
+
 			if (_imgDll != IntPtr.Zero)
 			{
 				//Yes it is required to freelib twice here
 				//once for our own LoadLib (to get the handle) and once for [DllImport]
 				//otherwise the file will still be in use and we can't delete it.
-				FreeLibrary(_imgDll);
-				FreeLibrary(_imgDll);
+				var imgDll = _imgDll;
+				_imgDll = IntPtr.Zero;
+				FreeLibrary(imgDll);
+				FreeLibrary(imgDll);
 			}
 		}
 

@@ -25,7 +25,7 @@ namespace Lunaris
 		[DllImport("winhttp.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
 		public static extern void ClearCache();
 
-		public static Version version = new("0.1.6");
+		public static Version version = new("0.1.7");
 
 		public static int fpsCount = 0;
 		public static int fpsFrame = 0;
@@ -121,6 +121,7 @@ namespace Lunaris
 		{
 			isUnloading = true;
 			Hooks.Dispose();
+			UI.Dispose();
 			ImGuiWrap.Dispose();
 			Application.logMessageReceived -= HandleLog;
 			ClearCache();

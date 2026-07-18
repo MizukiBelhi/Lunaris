@@ -92,6 +92,11 @@ namespace Lunaris
 			ImGuiWrap.OnRender += Draw;
 		}
 
+		internal static void Dispose()
+		{
+			ImGuiWrap.OnRender -= Draw;
+		}
+
 		internal static void SaveSettings()
 		{
 			Bridge.config.Save();

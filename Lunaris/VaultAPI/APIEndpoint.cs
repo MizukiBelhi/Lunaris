@@ -14,6 +14,7 @@ namespace Lunaris.VaultAPI
 		private readonly string _endpoint;
 		private readonly HttpClient _client;
 		private readonly ConcurrentDictionary<string, (T cached, DateTime lastFetched)> _cache = new();
+		private readonly ConcurrentDictionary<string, long> _requestVersions = new();
 		private readonly TimeSpan _cacheDuration;
 
 		public string EndpointName => _endpoint;
@@ -26,7 +27,7 @@ namespace Lunaris.VaultAPI
 			_cacheDuration = cacheDuration ?? TimeSpan.FromMinutes(5);
 		}
 
-		public async Task<T> FetchAsync(string slug = "", string version = "", bool forceRefresh = false)
+		public async Task<T> FetchAsync(string slug = "", string version = "", bool forceRefresh = false, IReadOnlyDictionary<string, string> query = null)
 		{
 			var endpoint = _endpoint;
 			if (!string.IsNullOrEmpty(slug))
@@ -35,15 +36,25 @@ namespace Lunaris.VaultAPI
 			if (!string.IsNullOrEmpty(version))
 				endpoint = endpoint.Replace("{version}", version);
 
+			if (query != null && query.Count > 0)
+			{
+				var queryString = string.Join("&", query
+					.OrderBy(entry => entry.Key, StringComparer.Ordinal)
+					.Select(entry => $"{Uri.EscapeDataString(entry.Key)}={Uri.EscapeDataString(entry.Value ?? string.Empty)}"));
+				endpoint += endpoint.Contains("?") ? $"&{queryString}" : $"?{queryString}";
+			}
+
 			if (!forceRefresh && _cache.TryGetValue(endpoint, out var entry) && DateTime.UtcNow - entry.lastFetched < _cacheDuration)
 				return entry.cached;
 
+			var requestVersion = _requestVersions.AddOrUpdate(endpoint, 1, (_, current) => current + 1);
 			var response = await _client.GetAsync(endpoint);
 			//response.EnsureSuccessStatusCode();
 
 			var json = await response.Content.ReadAsStringAsync();
 			var obj = JsonConvert.DeserializeObject<T>(json) ?? new T();
-			_cache[endpoint] = (obj, DateTime.UtcNow);
+			if (_requestVersions.TryGetValue(endpoint, out var latestRequestVersion) && latestRequestVersion == requestVersion)
+				_cache[endpoint] = (obj, DateTime.UtcNow);
 
 			return obj;
 		}

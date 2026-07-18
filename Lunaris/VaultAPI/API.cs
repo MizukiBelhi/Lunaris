@@ -14,9 +14,21 @@ using UnityEngine;
 
 namespace Lunaris
 {
+	internal sealed class PluginManifestPage
+	{
+		public List<PluginManifest> Items { get; set; } = [];
+		public int Page { get; set; }
+		public int PageSize { get; set; }
+		public int TotalItems { get; set; }
+		public int TotalPages { get; set; }
+		public bool Succeeded { get; set; }
+		public bool HasNext => Succeeded && Page < TotalPages;
+	}
+
 	internal class PluginRepository
 	{
 		private const string BaseUrl = "https://erenshorvault.app/api/v1/luna/";
+		private const int ModsPageSize = 20;
 
 		[DllImport("winhttp.dll", CallingConvention = CallingConvention.StdCall)]
 		[return: MarshalAs(UnmanagedType.LPStr)]
@@ -151,25 +163,63 @@ namespace Lunaris
 
 		
 
-		internal async Task<List<PluginManifest>> FetchApprovedAsync(bool forceRefresh)
+		internal async Task<PluginManifestPage> FetchApprovedPageAsync(int page, bool forceRefresh)
 		{
+			if (page < 1) throw new ArgumentOutOfRangeException(nameof(page));
+
+			var result = new PluginManifestPage
+			{
+				Page = page,
+				PageSize = ModsPageSize,
+				TotalPages = page,
+			};
+
 			try
 			{
 				var ep = Endpoint<ApiResponseMods>("mods");
-				var response = await ep.FetchAsync(forceRefresh: forceRefresh);
+				var query = new Dictionary<string, string>
+				{
+					["page"] = page.ToString(System.Globalization.CultureInfo.InvariantCulture),
+					["limit"] = ModsPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
+				};
+				var response = await ep.FetchAsync(forceRefresh: forceRefresh, query: query);
 
-				if (response?.Mods == null) return [];
+				if (response?.Pagination != null)
+				{
+					result.Page = Math.Max(1, response.Pagination.Page);
+					result.PageSize = Math.Max(1, response.Pagination.Limit);
+					result.TotalItems = Math.Max(0, response.Pagination.Total);
+					result.TotalPages = Math.Max(result.Page, response.Pagination.Pages);
+				}
 
-				var tasks = response.Mods.Select(MapToManifestAsync);
+				if (response?.Mods == null) return result;
 
-
-				return [.. (await Task.WhenAll(tasks))];
+				var tasks = response.Mods.Select(async mod =>
+				{
+					try
+					{
+						return await MapToManifestAsync(mod);
+					}
+					catch (Exception e)
+					{
+						Bridge.Logger.LogError($"[PluginRepository] Failed to map mod {mod?.Slug ?? "Unknown"} from page {page}: {e}");
+						return null;
+					}
+				});
+				result.Items = [.. (await Task.WhenAll(tasks)).Where(manifest => manifest != null)];
+				result.Succeeded = true;
 			}
 			catch (Exception e)
 			{
-				Bridge.Logger.LogError($"[PluginRepository] Failed to fetch mods: {e}");
-				return [];
+				Bridge.Logger.LogError($"[PluginRepository] Failed to fetch mods page {page}: {e}");
 			}
+
+			return result;
+		}
+
+		internal async Task<List<PluginManifest>> FetchApprovedAsync(bool forceRefresh)
+		{
+			return (await FetchApprovedPageAsync(1, forceRefresh)).Items;
 		}
 
 		//Need to sanitize these for imgui
@@ -181,7 +231,7 @@ namespace Lunaris
 
 		private async Task<PluginManifest> MapToManifestAsync(ApiResponseModSummary mod)
 		{
-			var vers = await FetchLatestVersions(mod.Slug);
+			var vers = await FetchLatestVersions(mod.Slug) ?? [];
 			var av = new List<string>();
 			foreach(var version in vers)
 			{
@@ -289,7 +339,7 @@ namespace Lunaris
 			{
 				var ep = Endpoint<ApiResponseModVersions>("modVersions");
 				var response = await ep.FetchAsync(slug: modId);
-				return response?.Versions;
+				return response?.Versions ?? [];
 			}
 			catch (Exception e)
 			{
