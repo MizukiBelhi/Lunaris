@@ -88,6 +88,7 @@ namespace Lunaris
 			}
 
 			plg.icon = desc.Manifest.IconBlob != null && desc.Manifest.IconBlob.Length > 0 ? BlobToTexture(desc.Manifest.IconBlob) : null;
+			ResortPlugins(sortAvailable: false);
 		}
 
 		public void SetInstalledPluginLoaded(PluginDescriptor desc)
@@ -121,12 +122,9 @@ namespace Lunaris
 
 		static bool hasPulledAPI = false;
 		static bool isCompleteApi = false;
-		private const float NextPageScrollThreshold = 200f;
-		private static int _currentApiPage = 0;
-		private static int _totalApiPages = 1;
 		private static int _apiRequestGeneration = 0;
-		private static bool _isApiPageLoading = false;
-		private static bool _apiPageLoadFailed = false;
+		private static bool _isApiLoading = false;
+		private static bool _apiLoadFailed = false;
 		private static PluginListItem _modalPlugin;
 
 		public void OnDraw()
@@ -146,7 +144,7 @@ namespace Lunaris
 			if(!hasPulledAPI)
 			{
 				isCompleteApi = false;
-				FetchApprovedPageAsync(1, true);
+				FetchApprovedAsync(true);
 
 				hasPulledAPI = true;
 			}
@@ -233,13 +231,13 @@ namespace Lunaris
 			return tex.LoadImage(blob) ? tex : null;
 		}
 
-		internal static void FetchApprovedPageAsync(int page, bool forceRefresh)
+		internal static void FetchApprovedAsync(bool forceRefresh)
 		{
-			if (_isApiPageLoading || page < 1) return;
+			if (_isApiLoading) return;
 
-			_isApiPageLoading = true;
-			_apiPageLoadFailed = false;
-			if (page == 1 && _currentApiPage == 0) isCompleteApi = false;
+			_isApiLoading = true;
+			_apiLoadFailed = false;
+			isCompleteApi = false;
 			var generation = _apiRequestGeneration;
 
 			Task.Run(async () =>
@@ -247,12 +245,12 @@ namespace Lunaris
 				PluginManifestPage result;
 				try
 				{
-					result = await Bridge.PluginApi.FetchApprovedPageAsync(page, forceRefresh);
+					result = await Bridge.PluginApi.FetchAllApprovedAsync(forceRefresh);
 				}
 				catch (Exception e)
 				{
-					Bridge.Logger.LogError($"[PluginInstaller] Failed to fetch mods page {page}: {e}");
-					result = new PluginManifestPage { Page = page, TotalPages = page };
+					Bridge.Logger.LogError($"[PluginInstaller] Failed to fetch the mod catalog: {e}");
+					result = new PluginManifestPage();
 				}
 
 				DispatcherBehaviour.RunOnMainThread(() => OnFinishGettingAPI(result, generation));
@@ -263,12 +261,12 @@ namespace Lunaris
 		{
 			if (generation != _apiRequestGeneration) return;
 
-			_isApiPageLoading = false;
+			_isApiLoading = false;
 
 			if (result == null || !result.Succeeded)
 			{
-				_apiPageLoadFailed = true;
-				if (_currentApiPage == 0) isCompleteApi = true;
+				_apiLoadFailed = true;
+				isCompleteApi = true;
 				return;
 			}
 
@@ -284,14 +282,12 @@ namespace Lunaris
 					}
 					catch (Exception e)
 					{
-						Bridge.Logger.LogError($"[PluginInstaller] Failed to process mod {manifest?.Id ?? "Unknown"} from page {result.Page}: {e}");
+						Bridge.Logger.LogError($"[PluginInstaller] Failed to process mod {manifest?.Id ?? "Unknown"}: {e}");
 					}
 				}
 			}
 
-			_currentApiPage = Math.Max(_currentApiPage, result.Page);
-			_totalApiPages = Math.Max(_currentApiPage, result.TotalPages);
-			isCompleteApi = _currentApiPage >= _totalApiPages;
+			isCompleteApi = true;
 			UI.installer.ResortPlugins();
 			UI.installer.UpdateCategoriesOnPluginsChange();
 		}
@@ -563,8 +559,7 @@ namespace Lunaris
 							}
 
 							DrawPluginCategoryContent();
-							DrawApiPaginationStatus();
-							TryLoadNextApiPage();
+							DrawApiLoadStatus();
 						}
 						catch (Exception ex)
 						{
@@ -715,45 +710,34 @@ namespace Lunaris
 			return CurrentGroupKind == GroupKind.Available || CurrentGroupKind == GroupKind.All;
 		}
 
-		private void DrawApiPaginationStatus()
+		private void DrawApiLoadStatus()
 		{
 			if (!IsApiBackedGroup()) return;
 
-			if (_isApiPageLoading)
+			if (_isApiLoading)
 			{
-				if (_currentApiPage == 0 && CurrentGroupKind == GroupKind.Available && pluginsAvailable.Count == 0) return;
+				if (CurrentGroupKind == GroupKind.Available && pluginsAvailable.Count == 0) return;
 
 				var availableWidth = ImGui.GetContentRegionAvail().X;
 				ImGui.SetCursorPosX(ImGui.GetCursorPosX() + Math.Max(0, (availableWidth - 24) * 0.5f));
 				UI.DrawSpinner(24);
 			}
-			else if (_apiPageLoadFailed)
+			else if (_apiLoadFailed)
 			{
-				ImGui.TextDisabled("Could not load more plugins.");
+				ImGui.TextDisabled("Could not load plugins.");
 				ImGui.SameLine();
-				if (ImGui.Button("Retry##PluginApiPage"))
+				if (ImGui.Button("Retry##PluginApiCatalog"))
 				{
-					FetchApprovedPageAsync(_currentApiPage + 1, true);
+					FetchApprovedAsync(true);
 				}
 			}
 		}
 
-		private void TryLoadNextApiPage()
-		{
-			if (!IsApiBackedGroup() || _isApiPageLoading || _apiPageLoadFailed) return;
-			if (_currentApiPage == 0 || _currentApiPage >= _totalApiPages) return;
-			if (ImGui.GetScrollMaxY() - ImGui.GetScrollY() > NextPageScrollThreshold) return;
-
-			FetchApprovedPageAsync(_currentApiPage + 1, true);
-		}
-
-		private static void ResetApiPagination()
+		private static void ResetApiLoading()
 		{
 			_apiRequestGeneration++;
-			_currentApiPage = 0;
-			_totalApiPages = 1;
-			_isApiPageLoading = false;
-			_apiPageLoadFailed = false;
+			_isApiLoading = false;
+			_apiLoadFailed = false;
 			isCompleteApi = false;
 			hasPulledAPI = false;
 		}
@@ -907,7 +891,7 @@ namespace Lunaris
 				flags |= PluginHeaderFlags.HasError;
 			if (plugin.hasUpdate)
 				flags |= PluginHeaderFlags.UpdateAvailable;
-			if (!plugin.desc.DeclaredPermissions.HasFlag(plugin.desc.EffectivePermissions))
+			if (!PluginPermissions.ArePermissionsDeclared(plugin.desc.DeclaredPermissions, plugin.desc.EffectivePermissions))
 				flags |= PluginHeaderFlags.HasInvalidPermissions;
 			if (plugin.desc.EffectivePermissions.HasFlag(LunarisPermission.BepinPlugin))
 				flags |= PluginHeaderFlags.IsLegacy;
@@ -1063,7 +1047,7 @@ namespace Lunaris
 				if (ImGui.Button("Refresh"))
 				{
 					pluginsAvailable.Clear();
-					ResetApiPagination();
+					ResetApiLoading();
 					UpdateCategoriesOnPluginsChange();
 				}
 			}
@@ -1874,17 +1858,17 @@ namespace Lunaris
 			//ImGui.PopFont();
 		}
 
-		private void ResortPlugins()
+		private void ResortPlugins(bool sortInstalled = true, bool sortAvailable = true)
 		{
 			switch (sortKind)
 			{
 				case PluginSortKind.Alphabetical:
-					pluginsAvailable.Sort((p1, p2) => p1.pluginName.CompareTo(p2.pluginName));
-					pluginsInstalled.Sort((p1, p2) => p1.pluginName.CompareTo(p2.pluginName));
+					if (sortAvailable) pluginsAvailable.Sort((p1, p2) => p1.pluginName.CompareTo(p2.pluginName));
+					if (sortInstalled) pluginsInstalled.Sort((p1, p2) => p1.pluginName.CompareTo(p2.pluginName));
 				break;
 				case PluginSortKind.DownloadCount:
-					pluginsAvailable.Sort((p1, p2) => p2.desc.Manifest.DownloadCount.CompareTo(p1.desc.Manifest.DownloadCount));
-					pluginsInstalled.Sort((p1, p2) => p2.desc.Manifest.DownloadCount.CompareTo(p1.desc.Manifest.DownloadCount));
+					if (sortAvailable) pluginsAvailable.Sort((p1, p2) => p2.desc.Manifest.DownloadCount.CompareTo(p1.desc.Manifest.DownloadCount));
+					if (sortInstalled) pluginsInstalled.Sort((p1, p2) => p2.desc.Manifest.DownloadCount.CompareTo(p1.desc.Manifest.DownloadCount));
 					break;
 				/*case PluginSortKind.LastUpdate:
 				pluginsAvailable.Sort((p1, p2) => p2.LastUpdate.CompareTo(p1.LastUpdate));
@@ -1908,11 +1892,11 @@ namespace Lunaris
 				//	  .CompareTo(WasPluginSeen(p2.Manifest.InternalName)));
 				//	break;
 				case PluginSortKind.NotInstalled:
-					pluginsAvailable.Sort((p1, p2) => pluginsInstalled.Any(x => x.pluginName == p1.pluginName).CompareTo(pluginsInstalled.Any(x => x.pluginName == p2.pluginName)));
-					pluginsInstalled.Sort((p1, p2) => p1.pluginName.CompareTo(p2.pluginName)); // Makes no sense for installed plugins
+					if (sortAvailable) pluginsAvailable.Sort((p1, p2) => pluginsInstalled.Any(x => x.pluginName == p1.pluginName).CompareTo(pluginsInstalled.Any(x => x.pluginName == p2.pluginName)));
+					if (sortInstalled) pluginsInstalled.Sort((p1, p2) => p1.pluginName.CompareTo(p2.pluginName)); // Makes no sense for installed plugins
 				break;
 				case PluginSortKind.EnabledDisabled:
-					pluginsAvailable.Sort((p1, p2) =>
+					if (sortAvailable) pluginsAvailable.Sort((p1, p2) =>
 					{
 						bool IsEnabled(PluginListItem manifest)
 						{
@@ -1921,7 +1905,7 @@ namespace Lunaris
 
 						return IsEnabled(p2).CompareTo(IsEnabled(p1));
 					});
-					pluginsInstalled.Sort((p1, p2) => (p2.IsLoaded).CompareTo(p1.IsLoaded));
+					if (sortInstalled) pluginsInstalled.Sort((p1, p2) => (p2.IsLoaded).CompareTo(p1.IsLoaded));
 				break;
 				case PluginSortKind.SearchScore:
 					if (!string.IsNullOrEmpty(searchText))
@@ -1933,13 +1917,13 @@ namespace Lunaris
 							if (name.Contains(searchText, StringComparison.OrdinalIgnoreCase)) return 2;
 							return 3;
 						}
-						pluginsAvailable = pluginsAvailable.OrderBy(m => Score(m.pluginName)).ToList();
-						pluginsInstalled = pluginsInstalled.OrderBy(m => Score(m.pluginName)).ToList();
+						if (sortAvailable) pluginsAvailable = pluginsAvailable.OrderBy(m => Score(m.pluginName)).ToList();
+						if (sortInstalled) pluginsInstalled = pluginsInstalled.OrderBy(m => Score(m.pluginName)).ToList();
 					}
 					else
 					{
-						pluginsAvailable = pluginsAvailable.OrderBy(m => m.pluginName).ToList();
-						pluginsInstalled = pluginsInstalled.OrderBy(m => m.pluginName).ToList();
+						if (sortAvailable) pluginsAvailable = pluginsAvailable.OrderBy(m => m.pluginName).ToList();
+						if (sortInstalled) pluginsInstalled = pluginsInstalled.OrderBy(m => m.pluginName).ToList();
 					}
 				break;
 				default:

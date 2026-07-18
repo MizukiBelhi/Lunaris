@@ -20,10 +20,10 @@ namespace Lunaris.Config
 
 		internal static void InvalidateConflicts() => _conflictsDirty = true;
 
-		public static void Add(string name, IConfig cfg)
+		public static void AddOrReplace(string name, IConfig cfg)
 		{
-			if (!_configs.ContainsKey(name))
-				_configs.TryAdd(name, cfg);
+			_configs[name] = cfg;
+			RemoveHandles(name);
 		}
 
 		public static void Remove(string name)
@@ -144,7 +144,11 @@ namespace Lunaris.Config
 
 		internal static IReadOnlyList<IConfigHandleInternal> GetHandles(string pluginName) => _handles.TryGetValue(pluginName, out var list) ? list : Array.Empty<IConfigHandleInternal>();
 		internal static IEnumerable<IConfigHandleInternal> GetAllHandles() => _handles.Values.SelectMany(x => x);
-		private static void RemoveHandles(string pluginName) => _handles.Remove(pluginName);
+		private static void RemoveHandles(string pluginName)
+		{
+			if (_handles.Remove(pluginName))
+				InvalidateConflicts();
+		}
 
 		internal static bool NotifyVKey(int vk, bool down)
 		{

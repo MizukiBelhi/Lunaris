@@ -322,6 +322,10 @@ namespace Lunaris
 					catch {  }
 				}
 
+				var configName = GetPluginConfigName(desc);
+				if (!string.IsNullOrWhiteSpace(configName))
+					ConfigHandler.Remove(configName);
+
 				AssemblyHooks.RemLoc(desc.filePath);
 				desc.filePath = null;
 				desc.Assembly = null;

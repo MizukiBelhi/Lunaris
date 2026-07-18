@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -163,14 +163,15 @@ namespace Lunaris
 
 		
 
-		internal async Task<PluginManifestPage> FetchApprovedPageAsync(int page, bool forceRefresh)
+		internal async Task<PluginManifestPage> FetchApprovedPageAsync(int page, bool forceRefresh, int pageSize = ModsPageSize)
 		{
 			if (page < 1) throw new ArgumentOutOfRangeException(nameof(page));
+			if (pageSize < 1) throw new ArgumentOutOfRangeException(nameof(pageSize));
 
 			var result = new PluginManifestPage
 			{
 				Page = page,
-				PageSize = ModsPageSize,
+				PageSize = pageSize,
 				TotalPages = page,
 			};
 
@@ -180,7 +181,7 @@ namespace Lunaris
 				var query = new Dictionary<string, string>
 				{
 					["page"] = page.ToString(System.Globalization.CultureInfo.InvariantCulture),
-					["limit"] = ModsPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
+					["limit"] = pageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				};
 				var response = await ep.FetchAsync(forceRefresh: forceRefresh, query: query);
 
@@ -217,9 +218,64 @@ namespace Lunaris
 			return result;
 		}
 
+		internal async Task<PluginManifestPage> FetchAllApprovedAsync(bool forceRefresh)
+		{
+			try
+			{
+				var ep = Endpoint<ApiResponseMods>("mods");
+				var countQuery = new Dictionary<string, string>
+				{
+					["page"] = "1",
+					["limit"] = "1",
+				};
+				var countResponse = await ep.FetchAsync(forceRefresh: forceRefresh, query: countQuery);
+				if (countResponse?.Pagination == null)
+				{
+					Bridge.Logger.LogError($"[PluginRepository] Failed to get the approved mod count: {countResponse?.Error ?? "Missing pagination data."}");
+					return new PluginManifestPage();
+				}
+
+				var totalItems = Math.Max(0, countResponse.Pagination.Total);
+				if (totalItems == 0)
+				{
+					return new PluginManifestPage
+					{
+						Page = 1,
+						PageSize = 1,
+						TotalPages = 1,
+						Succeeded = true,
+					};
+				}
+
+				var result = await FetchApprovedPageAsync(1, forceRefresh, totalItems);
+				for (int page = 2; result.Succeeded && page <= result.TotalPages; page++)
+				{
+					var next = await FetchApprovedPageAsync(page, forceRefresh, result.PageSize);
+					if (!next.Succeeded)
+					{
+						result.Succeeded = false;
+						break;
+					}
+
+					result.Items.AddRange(next.Items);
+					result.Page = page;
+					result.TotalItems = Math.Max(result.TotalItems, next.TotalItems);
+					result.TotalPages = Math.Max(result.TotalPages, next.TotalPages);
+				}
+
+				return result;
+			}
+			catch (Exception e)
+			{
+				Bridge.Logger.LogError($"[PluginRepository] Failed to fetch the approved mod catalog: {e}");
+				return new PluginManifestPage();
+			}
+		}
+
 		internal async Task<List<PluginManifest>> FetchApprovedAsync(bool forceRefresh)
 		{
-			return (await FetchApprovedPageAsync(1, forceRefresh)).Items;
+			var result = await FetchAllApprovedAsync(forceRefresh);
+			return result.Succeeded ? result.Items : [];
 		}
 
 		//Need to sanitize these for imgui

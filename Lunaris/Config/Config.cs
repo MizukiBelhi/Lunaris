@@ -51,14 +51,8 @@ namespace Lunaris.Config
 		{
 			_filePath = Path.Combine(PluginLoader.configPath, $"{pluginName}.lpcfg");
 			PluginName = pluginName;
-			ConfigHandler.Add(pluginName, this);
 			Load();
-		}
-
-		~ConfigInstance()
-		{
-			if (string.IsNullOrEmpty(PluginName)) return;
-			ConfigHandler.Remove(PluginName);
+			ConfigHandler.AddOrReplace(pluginName, this);
 		}
 
 		public IConfigHandle<T> Register<T>() where T : class, new() => ConfigHandler.Register<T>(PluginName);

@@ -25,7 +25,7 @@ namespace Lunaris
 		[DllImport("winhttp.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
 		public static extern void ClearCache();
 
-		public static Version version = new("0.1.7");
+		public static Version version = new("0.1.8");
 
 		public static int fpsCount = 0;
 		public static int fpsFrame = 0;
@@ -126,24 +126,6 @@ namespace Lunaris
 			Application.logMessageReceived -= HandleLog;
 			ClearCache();
 		}
-/*
-[Debug] Status : 200 OK
-[Debug] Content: application/json
-[Debug] {
-  "tags": [
-    "audio",
-    "automation",
-    "gameplay",
-    "graphics",
-    "library",
-    "performance",
-    "quality-of-life",
-    "social",
-    "ui",
-    "utility"
-  ]
-}
-		*/
 
 		public void Start()
 		{

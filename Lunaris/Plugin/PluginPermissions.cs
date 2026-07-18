@@ -9,6 +9,7 @@ namespace Lunaris
 {
 	internal static class PluginPermissions
 	{
+		private const LunarisPermission PluginTypeFlags = LunarisPermission.BepinPlugin | LunarisPermission.LunarisPlugin;
 
 		//We just do a very basic check across the assembly
 		internal static LunarisPermission GetUsedPermissions(AssemblyDefinition def)
@@ -61,6 +62,12 @@ namespace Lunaris
 			}
 
 			return used;
+		}
+
+		internal static bool ArePermissionsDeclared(LunarisPermission declared, LunarisPermission used)
+		{
+			var usedPermissions = used & ~PluginTypeFlags;
+			return declared.HasFlag(usedPermissions);
 		}
 	}
 }
