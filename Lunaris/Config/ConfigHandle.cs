@@ -118,7 +118,7 @@ namespace Lunaris.Config
 		internal void SetProperty(string propertyName, object value)
 		{
 			var m = GetMembers().FirstOrDefault(x => x.Name == propertyName);
-			if (m == null) return;
+			if (m == null && !_keybinds.ContainsKey(propertyName)) return;
 			if (m is PropertyInfo p && !p.CanWrite) return;
 
 			if (_keybinds.TryGetValue(propertyName, out var kb))
